@@ -430,50 +430,50 @@ class PyNcat:
         finally:
             sock.close()
 
-        def handle_listen(self):
-            """Starts a listening socket on the specified port to accept incoming connections."""
-            target_host = "0.0.0.0"  # Listen on all available network interfaces
-            target_port = self.args.port
+    def handle_listen(self):
+        """Starts a listening socket on the specified port to accept incoming connections."""
+        target_host = "0.0.0.0"  # Listen on all available network interfaces
+        target_port = self.args.port
 
-            # 1. Create and bind the server TCP socket
-            server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # 1. Create and bind the server TCP socket
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         
-            try:
-                server_socket.bind((target_host, target_port))
-                server_socket.listen(5)
-                logging.info(f"[*] Listening on {target_host}:{target_port} ...")
-            except Exception as e:
-                logging.error(f"[!] Failed to bind to port {target_port}: {e}")
-                sys.exit(1)
+        try:
+            server_socket.bind((target_host, target_port))
+            server_socket.listen(5)
+            logging.info(f"[*] Listening on {target_host}:{target_port} ...")
+        except Exception as e:
+            logging.error(f"[!] Failed to bind to port {target_port}: {e}")
+            sys.exit(1)
 
-            try:
-                while True:
-                    client_sock, client_addr = server_socket.accept()
-                    logging.info(f"[+] Accepted connection from {client_addr[0]}:{client_addr[1]}")
+        try:
+            while True:
+                client_sock, client_addr = server_socket.accept()
+                logging.info(f"[+] Accepted connection from {client_addr[0]}:{client_addr[1]}")
 
-                    # 2. Wrap incoming socket with SSL/TLS if requested
-                    if self.args.ssl:
-                        if not self.ssl_context:
-                            self.setup_ssl()
-                        logging.info("[*] Performing SSL/TLS handshake with client...")
-                        try:
-                            client_sock = self.ssl_context.wrap_socket(client_sock, server_side=True)
-                        except Exception as ssl_err:
-                            logging.error(f"[!] SSL Handshake failed: {ssl_err}")
-                            client_sock.close()
-                            continue
+                # 2. Wrap incoming socket with SSL/TLS if requested
+                if self.args.ssl:
+                    if not self.ssl_context:
+                        self.setup_ssl()
+                    logging.info("[*] Performing SSL/TLS handshake with client...")
+                    try:
+                        client_sock = self.ssl_context.wrap_socket(client_sock, server_side=True)
+                    except Exception as ssl_err:
+                        logging.error(f"[!] SSL Handshake failed: {ssl_err}")
+                        client_sock.close()
+                        continue
 
-                    # 3. Route the established connection
-                    if self.args.file:
-                        self.handle_file_transfer(client_sock)
-                    else:
-                        self.interactive_stream(client_sock)
+                # 3. Route the established connection
+                if self.args.file:
+                    self.handle_file_transfer(client_sock)
+                else:
+                    self.interactive_stream(client_sock)
                     
-            except KeyboardInterrupt:
-                logging.info("\n[*] Listener shutting down.")
-            finally:
-                server_socket.close()
+        except KeyboardInterrupt:
+            logging.info("\n[*] Listener shutting down.")
+        finally:
+            server_socket.close()
 
 
 
