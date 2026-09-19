@@ -475,6 +475,60 @@ class PyNcat:
         finally:
             server_socket.close()
 
+    def handle_file_transfer(self, sock):
+        """Handles reading from or writing to a file over the socket connection."""
+        file_path = Path(self.args.file)
+        buffer_size = 4096
+
+        if self.args.listen:
+            # === RECEIVING A FILE (Server Mode) ===
+            logging.info(f"[*] Receiving data stream into local file: {file_path}")
+            try:
+                with open(file_path, "wb") as f:
+                    with tqdm.tqdm(unit="B", unit_scale=True, desc="Downloading") as pbar:
+                        while True:
+                            data = sock.recv(buffer_size)
+                            if not data:
+                                break  # End of stream / Connection closed cleanly
+                            f.write(data)
+                            pbar.update(len(data))
+                logging.info(f"[+] File saved successfully to {file_path}")
+            except Exception as e:
+                logging.error(f"[!] Error writing file: {e}")
+            finally:
+                sock.close()
+
+        else:
+            # === SENDING A FILE (Client Mode) ===
+            if not file_path.exists():
+                logging.error(f"[!] Local file not found: {file_path}")
+                sock.close()
+                return
+
+            file_size = file_path.stat().st_size
+            logging.info(f"[*] Uploading {file_path} ({file_size} bytes)...")
+            
+            try:
+                with open(file_path, "rb") as f:
+                    with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc="Uploading") as pbar:
+                        while True:
+                            data = f.read(buffer_size)
+                            if not data:
+                                break
+                            sock.sendall(data)
+                            pbar.update(len(data))
+                logging.info("[+] File transmitted successfully.")
+            except Exception as e:
+                logging.error(f"[!] Error sending file: {e}")
+            finally:
+                # Use shutdown to notify the listener that transmission is complete
+                try:
+                    sock.shutdown(socket.SHUT_WR)
+                except OSError:
+                    pass
+                sock.close()
+
+
 
 
 
