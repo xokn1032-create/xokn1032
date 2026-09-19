@@ -349,13 +349,13 @@ class PyNcat:
             logging.info(f"[*] Reconnecting in {sleep_time:.1f}s... (Attempt {retries})")
             time.sleep(sleep_time)
 
-    def run(self):
-        """Main execution flow based on user arguments."""
-        if self.args.connect:
-            self.handle_connect()
-        elif self.args.listen:
-            # Placeholder for listen logic if implemented
-            logging.info(f"[*] Starting listener on port {self.args.port}...")
+        def run(self):
+            """Main execution gateway mapping parameters to respective operations."""
+            if self.args.connect:
+                self.handle_connect()
+            elif self.args.listen:
+                self.handle_listen()
+
 
     def handle_connect(self):
         """Establishes an outbound TCP/SSL connection to a remote host or website."""
