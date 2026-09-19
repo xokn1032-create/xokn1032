@@ -350,24 +350,86 @@ class PyNcat:
             time.sleep(sleep_time)
 
     def run(self):
-        # Handle injection first if requested
-        if self.args.inject_pid:
-            if self.args.shellcode:
-                self.inject_shellcode(self.args.inject_pid, self.args.shellcode)
-            elif self.args.dll:
-                self.inject_dll(self.args.inject_pid, self.args.dll)
-            else:
-                logging.error("[!] Specify --shellcode or --dll when using --inject-pid")
-            return  # Exit after injection
+        """Main execution flow based on user arguments."""
+        if self.args.connect:
+            self.handle_connect()
+        elif self.args.listen:
+            # Placeholder for listen logic if implemented
+            logging.info(f"[*] Starting listener on port {self.args.port}...")
 
-        # Normal listener / reverse shell logic
-        if self.args.listen:
-            self.listen()
-        else:
-            if self.args.persistent:
-                self.connect_persistent()
+    def handle_connect(self):
+        """Establishes an outbound TCP/SSL connection to a remote host or website."""
+        target_host = self.args.connect
+        target_port = self.args.port
+
+        logging.info(f"[*] Connecting to {target_host}:{target_port}...")
+
+        try:
+            # 1. Create a standard TCP Socket
+            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client_socket.settimeout(10.0)
+
+            # 2. Wrap socket with SSL if the --ssl flag is used (e.g., for HTTPS on port 443)
+            if self.args.ssl:
+                if not self.ssl_context:
+                    self.setup_ssl()
+                logging.info("[*] Wrapping socket in SSL/TLS layer...")
+                # server_hostname ensures SNI is sent correctly for web servers
+                client_socket = self.ssl_context.wrap_socket(
+                    client_socket, 
+                    server_hostname=target_host
+                )
+
+            # 3. Establish the connection
+            client_socket.connect((target_host, target_port))
+            client_socket.settimeout(None) # Remove timeout for interactive/streaming data
+            logging.info("[+] Connected successfully!")
+
+            # 4. Handle communication
+            if self.args.file:
+                # If a file upload/download option is specified
+                self.handle_file_transfer(client_socket)
             else:
-                self.connect_once()
+                # Default interactive or standard I/O stream
+                self.interactive_stream(client_socket)
+
+        except socket.timeout:
+            logging.error("[!] Connection timed out.")
+        except Exception as e:
+            logging.error(f"[!] Connection failed: {e}")
+
+    def interactive_stream(self, sock):
+        """Handles bidirectional data transmission between stdin/stdout and the socket."""
+        def receive_data():
+            while True:
+                try:
+                    data = sock.recv(4096)
+                    if not data:
+                        logging.info("[*] Remote host closed the connection.")
+                        break
+                    sys.stdout.buffer.write(data)
+                    sys.stdout.flush()
+                except Exception as e:
+                    logging.error(f"\n[!] Error receiving data: {e}")
+                    break
+            os._exit(0)
+
+        # Start a thread to handle incoming network data continuously
+        receive_thread = threading.Thread(target=receive_data, daemon=True)
+        receive_thread.start()
+
+        # Handle outgoing data from user input (stdin)
+        try:
+            while True:
+                line = sys.stdin.readline()
+                if not line:
+                    break
+                sock.sendall(line.encode('utf-8'))
+        except KeyboardInterrupt:
+            logging.info("\n[*] User interrupted connection.")
+        finally:
+            sock.close()
+
 
 
 if __name__ == "__main__":
