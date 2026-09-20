@@ -25,3 +25,6 @@ def parse_args(self):
         
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument('-c', '--connect', type=str, help='Connect to target (reverse shell)')
+    parser.add_argument('-v', '--verbose', action='store_true')
+        
+    return parser.parse_args()
