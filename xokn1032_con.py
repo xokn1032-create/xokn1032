@@ -1,13 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import socket
-import subprocess
-import sys
-import logging
-from pathlib import Path
-import os
-import time
-import ctypes
 
 class PyNcat:
     def __init__(self):
