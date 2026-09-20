@@ -1,3 +1,14 @@
+#!/usr/bin/env python3
+import argparse
+import socket
+import subprocess
+import sys
+import logging
+from pathlib import Path
+import os
+import time
+import ctypes
+
 # Windows API setup
 if os.name == 'nt':
     from ctypes import wintypes
