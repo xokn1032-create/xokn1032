@@ -579,6 +579,78 @@ class PyNcat:
                 except OSError:
                     pass
                 sock.close()
+    
+    def handle_udp(self):
+        """Handles both client and listener operational paths using UDP protocol."""
+        udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        buffer_size = 4096
+
+        if self.args.listen:
+            # === UDP LISTENER MODE ===
+            try:
+                udp_sock.bind(("0.0.0.0", self.args.port))
+                logging.info(f"[*] Listening for UDP packets on port {self.args.port}...")
+                
+                # Peek first packet to identify client endpoint context
+                data, addr = udp_sock.recvfrom(buffer_size)
+                logging.info(f"[+] Received UDP payload from {addr}")
+                sys.stdout.buffer.write(data)
+                sys.stdout.flush()
+
+                # Bidirectional background thread for incoming stream
+                def udp_receive_loop():
+                    while True:
+                        try:
+                            packet, _ = udp_sock.recvfrom(buffer_size)
+                            sys.stdout.buffer.write(packet)
+                            sys.stdout.flush()
+                        except Exception:
+                            break
+
+                t = threading.Thread(target=udp_receive_loop, daemon=True)
+                t.start()
+
+                # Handle outgoing input straight to captured client endpoint address
+                while True:
+                    line = sys.stdin.readline()
+                    if not line:
+                        break
+                    udp_sock.sendto(line.encode('utf-8'), addr)
+
+            except KeyboardInterrupt:
+                logging.info("\n[*] UDP Listener closed.")
+            finally:
+                udp_sock.close()
+
+        else:
+            # === UDP CLIENT MODE ===
+            target_host = self.args.connect
+            target_port = self.args.port
+            logging.info(f"[*] Ready to send UDP streams to {target_host}:{target_port}")
+
+            def udp_client_recv():
+                while True:
+                    try:
+                        packet, _ = udp_sock.recvfrom(buffer_size)
+                        sys.stdout.buffer.write(packet)
+                        sys.stdout.flush()
+                    except Exception:
+                        break
+
+            t = threading.Thread(target=udp_client_recv, daemon=True)
+            t.start()
+
+            try:
+                while True:
+                    line = sys.stdin.readline()
+                    if not line:
+                        break
+                    udp_sock.sendto(line.encode('utf-8'), (target_host, target_port))
+            except KeyboardInterrupt:
+                logging.info("\n[*] UDP stream closed.")
+            finally:
+                udp_sock.close()
+
 
 
 
