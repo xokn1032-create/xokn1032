@@ -219,12 +219,61 @@ class PyNcat:
             logging.error(f"DLL injection error: {e}")
             return False
 
-    def execute_command(self, cmd: str) -> str:
-        try:
-            output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT, timeout=15)
-            return output.decode('utf-8', errors='replace')
-        except Exception as e:
-            return f"[!] Error: {e}\n"
+     def execute_command(self, sock):
+         """Executes a command locally and pipes its input/output directly to the network socket."""
+         logging.info(f"[*] Executing command pipeline: {self.args.execute}")
+          try:
+              # Determine correct shell execution context depending on OS
+              shell_mode = True if os.name == 'nt' else False
+            
+             # Start process with standard streams redirected to pipes
+              proc = subprocess.Popen(
+                  self.args.execute,
+                  shell=shell_mode,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+                  stdin=subprocess.PIPE,
+                  text=False
+             )
+
+             # Thread to forward network incoming bytes into the process stdin
+             def network_to_process():
+                 while proc.poll() is None:
+                     try:
+                         data = sock.recv(4096)
+                         if not data:
+                             break
+                         proc.stdin.write(data)
+                         proc.stdin.flush()
+                     except Exception:
+                         break
+                 try:
+                     proc.terminate()
+                 except OSError:
+                     pass
+
+             t = threading.Thread(target=network_to_process, daemon=True)
+             t.start()
+
+             # Read process output and send it back out over the socket
+             while proc.poll() is None:
+                 output = proc.stdout.read(1024)
+                 if not output:
+                     time.sleep(0.01)
+                     continue
+                 sock.sendall(output)
+                
+             # Send any residual output after process terminates
+             residual = proc.stdout.read()
+             if residual:
+                 sock.sendall(residual)
+
+         except Exception as e:
+             logging.error(f"[!] Subprocess tracking error: {e}")
+         finally:
+             sock.close()
+             logging.info("[*] Command execution pipeline closed.")
+
 
     def upload_file(self, client_socket, filepath):
         try:
