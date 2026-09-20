@@ -48,7 +48,10 @@ class PyNcat:
         parser.add_argument('-p', '--port', type=int, required=True, help='Port number')
         
         # Core Features
-        parser.add_argument('-e', '--execute', type=str, help='Execute command on connection')
+        # Add inside parse_args(self) before returning:
+        parser.add_argument('-u', '--udp', action='store_true', help='Use UDP protocol instead of TCP')
+        parser.add_argument('-e', '--execute', type=str, help='Execute a command string and redirect I/O to network')
+
         parser.add_argument('-f', '--file', type=str, help='File to upload/save')
         
         # SSL
