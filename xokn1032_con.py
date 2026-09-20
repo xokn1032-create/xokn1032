@@ -18,3 +18,10 @@ class PyNcat:
         self.args = self.parse_args()
         if self.args.verbose:
             logging.getLogger().setLevel(logging.DEBUG)
+
+def parse_args(self):
+    parser = argparse.ArgumentParser(description="PyNcat", 
+                                       formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('-c', '--connect', type=str, help='Connect to target (reverse shell)')
