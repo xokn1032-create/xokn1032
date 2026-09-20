@@ -401,12 +401,24 @@ class PyNcat:
             logging.info(f"[*] Reconnecting in {sleep_time:.1f}s... (Attempt {retries})")
             time.sleep(sleep_time)
 
-        def run(self):
-            """Main execution gateway mapping parameters to respective operations."""
-            if self.args.connect:
-                self.handle_connect()
-            elif self.args.listen:
-                self.handle_listen()
+    def run(self):
+        """Main routing controller mapping operational parameters."""
+        # 1. Enforce validation rule: SSL cannot wrap raw UDP packets natively here
+        if self.args.udp and self.args.ssl:
+            logging.error("[!] SSL is not supported over raw UDP mode in this utility.")
+            sys.exit(1)
+
+        # 2. Redirect execution if UDP protocol route is requested
+        if self.args.udp:
+            self.handle_udp()
+            return
+
+        # 3. Default TCP code routes
+        if self.args.connect:
+            self.handle_connect()
+        elif self.args.listen:
+            self.handle_listen()
+
 
 
     def handle_connect(self):
