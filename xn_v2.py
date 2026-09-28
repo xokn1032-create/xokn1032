@@ -227,3 +227,95 @@ class PyNcat:
                         except Exception as tls_err:
                             logging.error(f"[-] TLS Handshake failure with {addr}: {tls_err}")
                             client.close()
+                                            thread = threading.Thread(target=self.handle_tcp_client, args=(client, addr), daemon=True)
+                thread.start()
+        except KeyboardInterrupt:
+            logging.info("\n[!] Shutting down listener infrastructure.")
+        finally:
+            server.close()
+
+    def connect(self):
+        # PROFILE: UDP CLIENT
+        if self.args.udp:
+            client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            logging.info(f"[*] Ready to transmit UDP targeted at {self.args.connect}:{self.args.port} {'[AES-GCM Secure]' if self.args.ssl else ''}")
+            
+            def send_packet(payload: bytes):
+                if self.args.ssl:
+                    payload = self.udp_crypto.encrypt(payload)
+                client.sendto(payload, (self.args.connect, self.args.port))
+
+            if self.args.file and os.path.exists(self.args.file):
+                filesize = os.path.getsize(self.args.file)
+                # Max secure payload fit per packet safely under path MTU constraints
+                chunk_size = 8100 if self.args.ssl else 8192
+                with open(self.args.file, 'rb') as f, tqdm.tqdm(total=filesize, unit='B', unit_scale=True, desc="UDP Burst") as pbar:
+                    while chunk := f.read(chunk_size):
+                        send_packet(chunk)
+                        pbar.update(len(chunk))
+                send_packet(b"__EOF__")
+                return
+
+            while True:
+                try:
+                    user_input = sys.stdin.readline()
+                    if not user_input: 
+                        break
+                    send_packet(user_input.encode())
+                except KeyboardInterrupt:
+                    break
+
+        # PROFILE: TCP CLIENT
+        else:
+            try:
+                raw_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                logging.info(f"[*] Opening TCP route to {self.args.connect}:{self.args.port}")
+                raw_client.connect((self.args.connect, self.args.port))
+                
+                client = self.ssl_context.wrap_socket(raw_client, server_hostname=self.args.connect) if self.args.ssl else raw_client
+                logging.info("[+] Connection successfully brokered.")
+
+                if self.args.file and os.path.exists(self.args.file):
+                    filesize = os.path.getsize(self.args.file)
+                    with open(self.args.file, 'rb') as f, tqdm.tqdm(total=filesize, unit='B', unit_scale=True, desc="TLS Upload") as pbar:
+                        while chunk := f.read(8192):
+                            client.sendall(chunk)
+                            pbar.update(len(chunk))
+                    return
+
+                def receive_loop():
+                    while True:
+                        try:
+                            data = client.recv(8192)
+                            if not data: 
+                                break
+                            sys.stdout.write(data.decode('utf-8', errors='replace'))
+                            sys.stdout.flush()
+                        except Exception: 
+                            break
+
+                threading.Thread(target=receive_loop, daemon=True).start()
+
+                while True:
+                    user_input = sys.stdin.readline()
+                    if not user_input: 
+                        break
+                    client.sendall(user_input.encode())
+                    if user_input.strip().lower() in ['exit', 'quit']: 
+                        break
+            except Exception as e:
+                logging.error(f"TCP outbound error: {e}")
+            finally:
+                try:
+                    client.close()
+                except NameError:
+                    pass
+
+    def run(self):
+        if self.args.listen: 
+            self.listen()
+        elif self.args.connect: 
+            self.connect()
+
+if __name__ == "__main__":
+    PyNcat().run()
