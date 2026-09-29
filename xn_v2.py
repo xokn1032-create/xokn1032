@@ -229,10 +229,10 @@ class PyNcat:
                             client.close()
                             thread = threading.Thread(target=self.handle_tcp_client, args=(client, addr), daemon=True)
                 thread.start()
-        except KeyboardInterrupt:
-            logging.info("\n[!] Shutting down listener infrastructure.")
-        finally:
-            server.close()
+            except KeyboardInterrupt:
+                logging.info("\n[!] Shutting down listener infrastructure.")
+            finally:
+                server.close()
 
     def connect(self):
         # PROFILE: UDP CLIENT
