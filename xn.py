@@ -97,11 +97,15 @@ class PyNcatUDP:
         parser.add_argument('--ssl', action='store_true', help='Enable cryptographic AES-GCM payload encryption')
         parser.add_argument('--key', type=str, help='UDP Pre-shared Key/Password passphrase for AES-GCM mode')
         parser.add_argument('--xor', type=str, help='Enable lightweight rolling multi-byte XOR obfuscation with specified key')
+        
         # Add these to your argument block inside parse_args()
         parser.add_argument('--jitter', type=float, default=0.0, help='Jitter percentage as a decimal (e.g., 0.30 for 30%% variance)')
         parser.add_argument('--burst-delay', type=float, default=0.0, help='Inter-packet sleep delay in seconds during file bursts')
 
-        
+        # Add these configuration boundaries inside parse_args()
+        parser.add_argument('--min-chunk', type=int, default=512, help='Minimum chunk size in bytes for file streaming profiles')
+        parser.add_argument('--max-chunk', type=int, default=1400, help='Maximum chunk size in bytes to prevent MTU fragmentation splits')
+
         # Reconnect Settings (Client Target Tracking)
         parser.add_argument('--retry', type=int, default=0, help='Max connection retry attempts (-1 for infinite)')
         parser.add_argument('--delay', type=int, default=5, help='Delay in seconds between client transmission retry loops')
