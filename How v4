@@ -1,0 +1,7 @@
+### How to Execute This Binary
+
+**Listener Mode (De-obfuscating XOR stream on port 9999):**
+```bash
+python3 pyncat_udp.py -l -p 9999 --xor "MySecretKey"
+
+python3 pyncat_udp.py -c 127.0.0.1 -p 9999 --xor "MySecretKey"
