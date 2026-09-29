@@ -8,6 +8,7 @@ import hashlib
 import time
 import tqdm
 import random
+import struct
 
 # Try loading structural AES-GCM engine components for UDP security profiles
 try:
