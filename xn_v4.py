@@ -268,3 +268,4 @@ class PyNcatUDP:
 
 
 if __name__ == '__main__':
+    PyNcat().run()
