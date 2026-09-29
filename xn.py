@@ -183,11 +183,24 @@ class PyNcatUDP:
                 logging.info(f"[*] Ready to transmit UDP targeted at {self.args.connect}:{self.args.port} {mode_desc}")
                 
                 def send_packet(payload: bytes):
+                    if self.args.pad_target > 0:
+                        payload_len = len(payload)
+                        if payload_len + 4 > self.args.pad_target:
+                            logging.warning(f"[!] Payload ({payload_len}B) exceeds --pad-target ({self.args.pad_target}B). Transmitting without padding.")
+                        else:
+                            # 1. Pack length into a 4-byte network-byte-order integer
+                            header = struct.pack('!I', payload_len)
+                            # 2. Compute required padding space
+                            padding_needed = self.args.pad_target - (payload_len + 4)
+                            # 3. Assemble structural packet
+                            payload = header + payload + os.urandom(padding_needed)
+
                     if self.xor_engine:
                         payload = self.xor_engine.process(payload)
                     if self.args.ssl and self.udp_crypto:
                         payload = self.udp_crypto.encrypt(payload)
                     client.sendto(payload, (self.args.connect, self.args.port))
+
 
                 # Inside the connect() method, replace your existing file upload block with this:
                 if self.args.file and os.path.exists(self.args.file):
