@@ -109,6 +109,10 @@ class PyNcatUDP:
         # Reconnect Settings (Client Target Tracking)
         parser.add_argument('--retry', type=int, default=0, help='Max connection retry attempts (-1 for infinite)')
         parser.add_argument('--delay', type=int, default=5, help='Delay in seconds between client transmission retry loops')
+
+        # Add this target size modifier inside parse_args()
+        parser.add_argument('--pad-target', type=int, default=0, help='Pad all transmitted packets to a static size in bytes (0 to disable)')
+
         
         parser.add_argument('-v', '--verbose', action='store_true', help='Verbose debug logging output')
         
