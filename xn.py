@@ -142,11 +142,24 @@ class PyNcatUDP:
                                 data = self.udp_crypto.decrypt(data)
                             except Exception:
                                 continue
-                        if self.xor_engine:
-                            data = self.xor_engine.process(data)
+                    # Inside the while loops of listen(), immediately after handling decryption/XOR:
+                    if self.xor_engine:
+                        data = self.xor_engine.process(data)
                         
-                        if b"__EOF__" in data: 
-                            break
+                    # --- ADD PADDING STRIPPER HERE ---
+                    if self.args.pad_target > 0:
+                        if len(data) >= 4:
+                            # Extract actual data size from the first 4 bytes
+                            actual_len = struct.unpack('!I', data[:4])[0]
+                            # Slice data to match original payload bounds
+                            data = data[4:4 + actual_len]
+                        else:
+                            logging.warning("[-] Received packet too short to parse padding header.")
+                    # ---------------------------------
+
+                    if b"__EOF__" in data: 
+                        break
+
                         f.write(data)
                 logging.info(f"[+] UDP file stream received and closed: {self.args.output}")
             else:
