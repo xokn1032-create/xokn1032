@@ -184,18 +184,39 @@ class PyNcatUDP:
                         payload = self.udp_crypto.encrypt(payload)
                     client.sendto(payload, (self.args.connect, self.args.port))
 
-                # Handle File Streaming Strategy
+                # Inside the connect() method, replace your existing file upload block with this:
                 if self.args.file and os.path.exists(self.args.file):
                     filesize = os.path.getsize(self.args.file)
-                    # Safe ceiling adjustments for UDP MTU/Fragmentation limits
-                    chunk_size = 8000 if self.args.ssl else 8192
                     
-                    with open(self.args.file, 'rb') as f, tqdm.tqdm(total=filesize, unit='B', unit_scale=True, desc="UDP Burst") as pbar:
-                        while chunk := f.read(chunk_size):
+                    # Establish safe operational bounds
+                    min_c = max(16, self.args.min_chunk)
+                    max_c = min(1400, self.args.max_chunk) if self.args.ssl else min(1450, self.args.max_chunk)
+                    
+                    if min_c > max_c:
+                        min_c = max_c
+                    
+                    with open(self.args.file, 'rb') as f, tqdm.tqdm(total=filesize, unit='B', unit_scale=True, desc="Dynamic Burst") as pbar:
+                        while True:
+                            # Generate a completely random byte length for this specific packet
+                            current_chunk_size = random.randint(min_c, max_c)
+                            
+                            chunk = f.read(current_chunk_size)
+                            if not chunk:
+                                break  # End of file reached
+                                
                             send_packet(chunk)
                             pbar.update(len(chunk))
+                            
+                            # Integrate inter-packet jitter delays if configured
+                            if self.args.burst_delay > 0:
+                                base = self.args.burst_delay
+                                variance = base * (self.args.jitter if self.args.jitter > 0 else 0.20)
+                                actual_burst_sleep = random.uniform(base - variance, base + variance)
+                                time.sleep(max(0.001, actual_burst_sleep))
+                                
                     send_packet(b"__EOF__")
                     return
+
 
                 # Inside the connect() method, under the File Streaming loop:
                 if self.args.file and os.path.exists(self.args.file):
