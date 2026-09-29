@@ -7,6 +7,7 @@ import os
 import hashlib
 import time
 import tqdm
+import random
 
 # Try loading structural AES-GCM engine components for UDP security profiles
 try:
@@ -96,6 +97,10 @@ class PyNcatUDP:
         parser.add_argument('--ssl', action='store_true', help='Enable cryptographic AES-GCM payload encryption')
         parser.add_argument('--key', type=str, help='UDP Pre-shared Key/Password passphrase for AES-GCM mode')
         parser.add_argument('--xor', type=str, help='Enable lightweight rolling multi-byte XOR obfuscation with specified key')
+        # Add these to your argument block inside parse_args()
+        parser.add_argument('--jitter', type=float, default=0.0, help='Jitter percentage as a decimal (e.g., 0.30 for 30%% variance)')
+        parser.add_argument('--burst-delay', type=float, default=0.0, help='Inter-packet sleep delay in seconds during file bursts')
+
         
         # Reconnect Settings (Client Target Tracking)
         parser.add_argument('--retry', type=int, default=0, help='Max connection retry attempts (-1 for infinite)')
@@ -188,6 +193,27 @@ class PyNcatUDP:
                     send_packet(b"__EOF__")
                     return
 
+                # Inside the connect() method, under the File Streaming loop:
+                if self.args.file and os.path.exists(self.args.file):
+                    filesize = os.path.getsize(self.args.file)
+                    chunk_size = 8000 if self.args.ssl else 8192
+                    
+                    with open(self.args.file, 'rb') as f, tqdm.tqdm(total=filesize, unit='B', unit_scale=True, desc="UDP Burst") as pbar:
+                        while chunk := f.read(chunk_size):
+                            send_packet(chunk)
+                            pbar.update(len(chunk))
+                            
+                            # Break up packet-burst signatures using jittered delays
+                            if self.args.burst_delay > 0:
+                                base = self.args.burst_delay
+                                variance = base * (self.args.jitter if self.args.jitter > 0 else 0.20) # 20% default jitter if unset
+                                actual_burst_sleep = random.uniform(base - variance, base + variance)
+                                time.sleep(max(0.001, actual_burst_sleep))
+                                
+                    send_packet(b"__EOF__")
+                    return
+
+
                 # Handle Interactive STDIN Strategy 
                 logging.info("[*] Entering stream loop. Press Ctrl+C or send empty line to drop client execution.")
                 while True:
@@ -196,6 +222,23 @@ class PyNcatUDP:
                         break
                     send_packet(user_input.encode())
                 break
+
+                # Inside the connect() method, under the STDIN Interactive loop:
+                logging.info("[*] Entering stream loop. Press Ctrl+C to drop client execution.")
+                while True:
+                    user_input = sys.stdin.readline()
+                    if not user_input:
+                        break
+                    send_packet(user_input.encode())
+                    
+                    # Apply Jitter to standard transmissions if requested
+                    if self.args.delay > 0 and self.args.jitter > 0:
+                        base = self.args.delay
+                        variance = base * self.args.jitter
+                        actual_sleep = random.uniform(base - variance, base + variance)
+                        actual_sleep = max(0.01, actual_sleep) # Ensure time is positive
+                        time.sleep(actual_sleep)
+
 
             except socket.error as connection_fault:
                 logging.warning(f"[-] Socket network fault experienced: {connection_fault}")
