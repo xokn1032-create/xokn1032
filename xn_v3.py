@@ -115,7 +115,10 @@ class PyNcatUDPEvader:
         
         # Reconnect Settings 
         parser.add_argument('--retry', type=int, default=-1, help='Max network socket recreation retry attempts (-1 for infinite)')
-        
+
+        # Add these to your argument block inside parse_args()
+        parser.add_argument('--heartbeat', type=float, default=15.0, help='Base heartbeat interval in seconds for stateless link preservation')
+
         parser.add_argument('-v', '--verbose', action='store_true', help='Verbose debug logging output')
         
         return parser.parse_args()
