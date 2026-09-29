@@ -227,7 +227,7 @@ class PyNcat:
                         except Exception as tls_err:
                             logging.error(f"[-] TLS Handshake failure with {addr}: {tls_err}")
                             client.close()
-                            thread = threading.Thread(target=self.handle_tcp_client, args=(client, addr), daemon=True)
+                thread = threading.Thread(target=self.handle_tcp_client, args=(client, addr), daemon=True)
                 thread.start()
             except KeyboardInterrupt:
                 logging.info("\n[!] Shutting down listener infrastructure.")
