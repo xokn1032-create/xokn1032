@@ -185,7 +185,15 @@ class PyNcatUDPEvader:
 
 
     def _unpack_and_verify(self, data: bytes) -> bytes:
-        """Decrypts, aligns rotational key states, and extracts authentic payload bytes."""
+        """Decodes Base64 ASCII payloads, handles cryptographic alignment, and strips padding."""
+        # --- ADD BASE64 DECODING HERE ---
+        if self.args.b64:
+            try:
+                data = base64.b64decode(data)
+            except Exception as b64_err:
+                raise ValueError(f"Base64 decoding fault on incoming datagram: {b64_err}")
+        # --------------------------------
+
         if self.args.ssl and self.udp_crypto:
             data = self.udp_crypto.decrypt(data)
             
@@ -194,7 +202,7 @@ class PyNcatUDPEvader:
             
         if self.args.pad_target > 0:
             if len(data) >= 4:
-                actual_len = struct.unpack('!I', data[:4])[0]
+                actual_len = struct.unpack('!I', data[:4])[0] # Ensure indexing integer extraction
                 data = data[4:4 + actual_len]
             else:
                 raise ValueError("Packet structurally too short to strip padding envelopes.")
@@ -204,15 +212,14 @@ class PyNcatUDPEvader:
                 remote_seq = struct.unpack('!I', data[:4])[0]
                 data = data[4:]
                 
-                # Check for dropped packet gaps and fast-forward rotational tracking to match remote state
                 if self.xor_engine.packet_counter < remote_seq:
-                    logging.debug(f"[*] Network dropped packet detected. Fast-forwarding state engine: {self.xor_engine.packet_counter} -> {remote_seq}")
                     while self.xor_engine.packet_counter < remote_seq:
                         self.xor_engine.rotate_key()
             else:
                 raise ValueError("Missing state synchronization header.")
                 
         return data
+
 
     def listen(self):
         """Dedicated UDP Listener Context with Structural Unpacking Engine."""
