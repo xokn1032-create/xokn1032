@@ -143,7 +143,11 @@ class PyNcatUDPEvader:
                 sys.exit(1)
             logging.info("[*] Initializing AES-GCM Engine for Encrypted UDP mode.")
             self.udp_crypto = SecureUDPWrapper(self.args.key)
+        
+        # Add inside __init__
+        self.camofleur = ProtocolCamouflage(mode="http")
 
+    
     def parse_args(self):
         parser = argparse.ArgumentParser(
             description="PyNcat - Dedicated Secure UDP Netcat (Evasion, Key Rotation & Reverse Shell Profile)", 
