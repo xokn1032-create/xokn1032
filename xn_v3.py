@@ -195,7 +195,25 @@ class PyNcatUDPEvader:
                     logging.debug(f"[-] Dropped unverified datagram from {addr}: {err}")
                     continue
 
+                # 3. Strip Length-Prefixed Padding Layers
+                if self.args.pad_target > 0:
+                    if len(data) >= 4:
+                        actual_len = struct.unpack('!I', data[:4])
+                        data = data[4:4 + actual_len]
+                    else:
+                        logging.warning(f"[-] Dropped malformed packet from {addr}")
+                        continue
+
+                # --- ADD HEARTBEAT INTERCEPTOR HERE ---
+                if data == b"__PING__":
+                    # Respond with an obfuscated echo confirmation receipt immediately
+                    server.sendto(self._pack_and_secure(b"__PONG__"), addr)
+                    continue
+                # --------------------------------------
+
+                # 4. Stream Evaluation
                 if b"__EOF__" in data:
+
                     if output_file_handle:
                         logging.info("[+] Terminal end-of-file validation signature reached.")
                         break
