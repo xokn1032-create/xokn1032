@@ -11,6 +11,7 @@ import struct
 import subprocess
 import threading
 import tqdm
+import base64
 
 # Try loading structural AES-GCM engine components for UDP security profiles
 try:
