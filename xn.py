@@ -222,23 +222,30 @@ class PyNcatUDPEvader:
         if self.args.ssl and self.udp_crypto:
             payload = self.udp_crypto.encrypt(payload)
             
-        # --- ADD BASE64 ENCODING HERE ---
         if self.args.b64:
             payload = base64.b64encode(payload)
-        # --------------------------------
+            
+        # --- APPLY CAMOUFLAGE AS THE FINAL LAYER ---
+        payload = self.camofleur.apply_header(payload)
+        # --------------------------------------------
             
         return payload
 
 
     def _unpack_and_verify(self, data: bytes) -> bytes:
-        """Decodes Base64 ASCII payloads, handles cryptographic alignment, and strips padding."""
-        # --- ADD BASE64 DECODING HERE ---
+        """Decodes camouflage structures, handles decryption, and aligns components."""
+        # --- STRIP CAMOUFLAGE AS THE FIRST LAYER ---
+        try:
+            data = self.camofleur.strip_header(data)
+        except Exception as cam_err:
+            raise ValueError(f"Malformed protocol camouflage template: {cam_err}")
+        # --------------------------------------------
+
         if self.args.b64:
             try:
                 data = base64.b64decode(data)
-            except Exception as b64_err:
-                raise ValueError(f"Base64 decoding fault on incoming datagram: {b64_err}")
-        # --------------------------------
+
+    
 
         if self.args.ssl and self.udp_crypto:
             data = self.udp_crypto.decrypt(data)
