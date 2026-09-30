@@ -182,6 +182,39 @@ class PyNcatUDPEvader:
         return payload
 
 
+    def _unpack_and_verify(self, data: bytes) -> bytes:
+        """Decrypts, aligns rotational key states, and extracts authentic payload bytes."""
+        if self.args.ssl and self.udp_crypto:
+            data = self.udp_crypto.decrypt(data)
+            
+        if self.xor_engine:
+            # We must peak into the packet or handle synchronization.
+            # In a robust implementation, the listener temporarily tests the next few steps
+            # or decrypts the first layer using a rolling state strategy.
+            data = self.xor_engine.process(data)
+            
+        if self.args.pad_target > 0:
+            if len(data) >= 4:
+                actual_len = struct.unpack('!I', data[:4])
+                data = data[4:4 + actual_len]
+            else:
+                raise ValueError("Packet structurally too short to strip padding envelopes.")
+        
+        # Extract the sequence number to confirm key tracking match
+        if self.xor_engine:
+            if len(data) >= 4:
+                remote_seq = struct.unpack('!I', data[:4])[0]
+                data = data[4:]
+                # If remote node has a higher sequence, catch up the engine loop
+                while self.xor_engine.packet_counter < remote_seq:
+                    self.xor_engine.rotate_key()
+            else:
+                raise ValueError("Missing state synchronization header.")
+                
+        return data
+
+
+
     def listen(self):
         """Dedicated UDP Listener Context with Structural Unpacking Engine."""
         server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
