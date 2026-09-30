@@ -156,7 +156,7 @@ class PyNcatUDPEvader:
             time.sleep(base_delay)
 
     def _pack_and_secure(self, payload: bytes) -> bytes:
-        """Appends sequential state framing before scrambling the payload buffer."""
+        """Appends structure framing, applies encryption, and conditionally encodes to Base64 ASCII."""
         if self.xor_engine:
             seq_header = struct.pack('!I', self.xor_engine.packet_counter)
             payload = seq_header + payload
@@ -176,7 +176,13 @@ class PyNcatUDPEvader:
         if self.args.ssl and self.udp_crypto:
             payload = self.udp_crypto.encrypt(payload)
             
+        # --- ADD BASE64 ENCODING HERE ---
+        if self.args.b64:
+            payload = base64.b64encode(payload)
+        # --------------------------------
+            
         return payload
+
 
     def _unpack_and_verify(self, data: bytes) -> bytes:
         """Decrypts, aligns rotational key states, and extracts authentic payload bytes."""
