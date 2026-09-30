@@ -156,8 +156,9 @@ class PyNcatUDPEvader:
         
         group = parser.add_mutually_exclusive_group(required=True)
         group.add_argument('-l', '--listen', action='store_true', help='Listen mode (Server)')
-        group.add_argument('-c', '--connect', type=str, help='Connect to target destination IP or Domain (Client)')
-        
+        # Modify this existing argument definition inside parse_args():
+        group.add_argument('-c', '--connect', type=str, nargs='+', help='Connect to a list of target destination IPs or Domains (space-separated)')
+
         parser.add_argument('-p', '--port', type=int, required=True, help='UDP Port number')
         
         # Operation profiles
