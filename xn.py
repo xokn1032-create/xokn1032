@@ -137,7 +137,10 @@ class PyNcatUDPEvader:
         
         # Reconnect Settings 
         parser.add_argument('--retry', type=int, default=-1, help='Max network socket recreation retry attempts (-1 for infinite)')
-        
+
+        # Add this flag inside parse_args()
+        parser.add_argument('--b64', action='store_true', help='Encapsulate outgoing data streams into printable Base64 strings')
+
         parser.add_argument('-v', '--verbose', action='store_true', help='Verbose debug logging output')
         
         return parser.parse_args()
