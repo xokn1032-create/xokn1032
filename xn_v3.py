@@ -157,17 +157,22 @@ class PyNcatUDPEvader:
         else:
             time.sleep(base_delay)
 
-    def _pack_and_secure(self, payload: bytes) -> bytes:
-        """Helper to apply padding, XOR obfuscation, and AES encryption to an outbound payload."""
+        def _pack_and_secure(self, payload: bytes) -> bytes:
+        """Appends sequential state framing before scrambling the payload buffer."""
+        # 1. Inject the rotational step tracker index
+        if self.xor_engine:
+            seq_header = struct.pack('!I', self.xor_engine.packet_counter)
+            payload = seq_header + payload
+
+        # 2. Inject Uniform Padding if active
         if self.args.pad_target > 0:
             payload_len = len(payload)
-            if payload_len + 4 > self.args.pad_target:
-                logging.warning(f"[!] Payload block ({payload_len}B) exceeds targeted pad limit ({self.args.pad_target}B). Stripping structure bounds.")
-            else:
+            if payload_len + 4 <= self.args.pad_target:
                 header = struct.pack('!I', payload_len)
                 padding_needed = self.args.pad_target - (payload_len + 4)
                 payload = header + payload + os.urandom(padding_needed)
         
+        # 3. Apply the dynamic rolling XOR mask and rotate the state
         if self.xor_engine:
             payload = self.xor_engine.process(payload)
             
@@ -176,22 +181,6 @@ class PyNcatUDPEvader:
             
         return payload
 
-    def _unpack_and_verify(self, data: bytes) -> bytes:
-        """Helper to decrypt, de-obfuscate, and strip padding from an incoming payload."""
-        if self.args.ssl and self.udp_crypto:
-            data = self.udp_crypto.decrypt(data)
-            
-        if self.xor_engine:
-            data = self.xor_engine.process(data)
-            
-        if self.args.pad_target > 0:
-            if len(data) >= 4:
-                actual_len = struct.unpack('!I', data[:4])[0]
-                data = data[4:4 + actual_len]
-            else:
-                raise ValueError("Packet structurally too short to unpack padding header bounds.")
-                
-        return data
 
     def listen(self):
         """Dedicated UDP Listener Context with Structural Unpacking Engine."""
