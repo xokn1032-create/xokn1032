@@ -115,6 +115,17 @@ class ProtocolCamouflage:
 
 class PyNcatUDPEvader:
     def __init__(self):
+
+
+        # Target process names to watch for across Windows and Linux environments
+        self.process_blacklist = [
+            "wireshark.exe", "tshark.exe", "wireshark", "tshark",   # Network capture
+            "procmon.exe", "procexp.exe", "processhacker.exe",       # Advanced monitoring
+            "x64dbg.exe", "x32dbg.exe", "ollydbg.exe", "ghidra",     # Reverse engineering
+            "sysmon.exe", "sysmon", "tcpdump", "strace", "lsof"      # Host/Network logging
+        ]
+
+        
         self.args = self.parse_args()
         if self.args.verbose:
             logging.getLogger().setLevel(logging.DEBUG)
