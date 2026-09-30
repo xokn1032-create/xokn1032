@@ -193,7 +193,11 @@ class PyNcatUDP:
         while True:
             try:
                 client = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                logging.info(f"[*] Ready to transmit UDP targeted at {self.args.connect}:{self.args.port} {mode_desc}")
+                # Inside the while True loop of connect(), immediately after 'client = socket.socket(...)':
+                if self.xor_engine:
+                    logging.info("[*] Syncing rotational crypto engines back to zero milestone.")
+                    self.xor_engine.reset_state()
+
                 
                 def send_packet(payload: bytes):
                     if self.args.pad_target > 0:
