@@ -78,6 +78,48 @@ class XORObfuscator:
         self.packet_counter = 0
 
 
+class ProtocolCamouflage:
+    """Wraps payloads inside mock application headers and parses them out on delivery."""
+    def __init__(self, mode: str = "http"):
+        self.mode = mode.lower()
+
+    def apply_header(self, payload: bytes) -> bytes:
+        """Prefixed structural templates to the outbound payload."""
+        if self.mode == "http":
+            # Convert binary payload to string safely for the template
+            payload_str = payload.decode('utf-8', errors='replace')
+            
+            # Construct a legitimate-looking HTTP POST request body
+            http_template = (
+                f"POST /api/v1/metrics HTTP/1.1\r\n"
+                f"Host: cloud-telemetry.internal\r\n"
+                f"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\n"
+                f"Content-Type: application/x-www-form-urlencoded\r\n"
+                f"Content-Length: {len(payload_str) + 5}\r\n"
+                f"Connection: close\r\n\r\n"
+                f"data={payload_str}"
+            )
+            return http_template.encode('utf-8')
+        
+        return payload
+
+    def strip_header(self, data: bytes) -> bytes:
+        """Surgically extracts the payload from the surrounding protocol wrapper."""
+        if self.mode == "http":
+            try:
+                data_str = data.decode('utf-8', errors='replace')
+                # Locate the parameter delimiter 'data=' separating header from payload
+                if "data=" in data_str:
+                    parts = data_str.split("data=", 1)
+                    # Return only the raw obfuscated payload segment as bytes
+                    return parts[1].encode('utf-8')
+            except Exception as e:
+                raise ValueError(f"Camouflage extraction boundary fault: {e}")
+                
+        return data
+
+
+
 class PyNcatUDPEvader:
     def __init__(self):
         self.args = self.parse_args()
