@@ -157,7 +157,7 @@ class PyNcatUDPEvader:
         else:
             time.sleep(base_delay)
 
-        def _pack_and_secure(self, payload: bytes) -> bytes:
+    def _pack_and_secure(self, payload: bytes) -> bytes:
         """Appends sequential state framing before scrambling the payload buffer."""
         # 1. Inject the rotational step tracker index
         if self.xor_engine:
