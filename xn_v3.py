@@ -46,15 +46,39 @@ class SecureUDPWrapper:
 
 
 class XORObfuscator:
-    """Implements dependency-free rolling multi-byte XOR masking for UDP payloads."""
-    def __init__(self, key: str):
-        self.key = key.encode('utf-8') if isinstance(key, str) else key
-        self.key_len = len(self.key)
+    """Implements a stateful, rotational multi-byte XOR obfuscation engine."""
+    def __init__(self, seed_key: str):
+        self.initial_key = seed_key.encode('utf-8') if isinstance(seed_key, str) else seed_key
+        self.current_key = hashlib.sha256(self.initial_key).digest()
+        self.key_len = len(self.current_key)
+        self.packet_counter = 0
 
     def process(self, data: bytes) -> bytes:
+        """XORs bytes against the rotating pattern of the key."""
         if not self.key_len:
             return data
-        return bytes(b ^ self.key[i % self.key_len] for i, b in enumerate(data))
+        
+        # Apply standard XOR masking
+        output = bytes(b ^ self.current_key[i % self.key_len] for i, b in enumerate(data))
+        
+        # Rotate the key systematically for the next transaction block
+        self.rotate_key()
+        return output
+
+    def rotate_key(self):
+        """Derives a new key deterministically using a SHA256 chain modifier."""
+        self.packet_counter += 1
+        # Salt the rotation using the current iteration state to avoid repeat patterns
+        salt = struct.pack('!I', self.packet_counter)
+        self.current_key = hashlib.sha256(self.current_key + salt).digest()
+        self.key_len = len(self.current_key)
+
+    def reset_state(self):
+        """Resets the state machine back to default (for client socket recreations)."""
+        self.current_key = hashlib.sha256(self.initial_key).digest()
+        self.key_len = len(self.current_key)
+        self.packet_counter = 0
+
 
 
 class PyNcatUDPEvader:
