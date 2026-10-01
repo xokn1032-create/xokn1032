@@ -194,40 +194,79 @@ class XORObfuscator:
 
 
 class ProtocolCamouflage:
-    """Wraps payloads inside mock application headers and parses them out on delivery."""
-    def __init__(self, enabled: bool = False, mode: str = "http"):
+    """Structures payloads inside mock DNS queries or NTP synchronization packets."""
+    def __init__(self, enabled: bool = False, mode: str = "dns"):
         self.enabled = enabled
         self.mode = mode.lower()
 
     def apply_header(self, payload: bytes) -> bytes:
         if not self.enabled:
             return payload
-        if self.mode == "http":
-            payload_str = payload.decode('utf-8', errors='replace')
-            http_template = (
-                f"POST /api/v1/metrics HTTP/1.1\r\n"
-                f"Host: cloud-telemetry.internal\r\n"
-                f"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)\r\n"
-                f"Content-Type: application/x-www-form-urlencoded\r\n"
-                f"Content-Length: {len(payload_str) + 5}\r\n"
-                f"Connection: close\r\n\r\n"
-                f"data={payload_str}"
-            )
-            return http_template.encode('utf-8')
+
+        # PROFILE A: DNS QUESTION MASQUERADE
+        if self.mode == "dns":
+            # 1. Forge a valid 12-byte DNS Query Header
+            transaction_id = random.randint(0, 65535)
+            flags = 0x0100  # Standard query with recursion desired
+            questions = 1
+            answer_rrs = 0
+            authority_rrs = 0
+            additional_rrs = 0
+            
+            dns_header = struct.pack('!HHHHHH', transaction_id, flags, questions, answer_rrs, authority_rrs, additional_rrs)
+            
+            # 2. Append a fake domain question block: "\x07updates\x05cloud\x03lan\x00"
+            # Format requires [length block][string string] ended by null byte
+            query_name = b"\x07updates\x05cloud\x03lan\x00"
+            query_type = struct.pack('!H', 16)   # Type 16 = TXT Record (Holds variable text fields)
+            query_class = struct.pack('!H', 1)  # Class 1 = IN (Internet)
+            
+            # 3. Combine header, query layout, and raw payload data
+            return dns_header + query_name + query_type + query_class + payload
+
+        # PROFILE B: NTP SYNCHRONIZATION REQUEST MASQUERADE
+        elif self.mode == "ntp":
+            # NTP packets require exactly 48 bytes minimum.
+            # Byte 0: LI (00), VN (100 = v4), Mode (011 = client) -> 0x23
+            ntp_header = bytearray(48)
+            ntp_header[0] = 0x23 # Standard status configuration
+            
+            # Fill the remaining 47 bytes with payload data (truncate or pad out)
+            payload_len = len(payload)
+            if payload_len > 47:
+                # If too big, append data directly out past the baseline header boundaries
+                return bytes([ntp_header[0]]) + payload
+            else:
+                # Blend data straight into the timestamp slots
+                ntp_header[1:1+payload_len] = payload
+                return bytes(ntp_header)
+
         return payload
 
     def strip_header(self, data: bytes) -> bytes:
         if not self.enabled:
             return data
-        if self.mode == "http":
+
+        if self.mode == "dns":
             try:
-                data_str = data.decode('utf-8', errors='replace')
-                if "data=" in data_str:
-                    parts = data_str.split("data=", 1)
-                    return parts[1].encode('utf-8')
+                # Skip the 12-byte header + length of query labels and question constraints
+                # Header (12B) + Query Labels (16B) + Type (2B) + Class (2B) = 32 Bytes offset
+                return data[32:]
             except Exception as e:
-                raise ValueError(f"Camouflage extraction boundary fault: {e}")
+                raise ValueError(f"DNS Camouflage parsing fault: {e}")
+
+        elif self.mode == "ntp":
+            try:
+                # Strip off the initial operational flag byte
+                # If packet matches standard NTP layout, isolate your custom storage slice
+                clean_payload = data[1:]
+                # Trim out trailing trailing null bytes added by NTP padding locks
+                return clean_payload.rstrip(b'\x00') if b'\x00' in clean_payload else clean_payload
+            except Exception as e:
+                raise ValueError(f"NTP Camouflage parsing fault: {e}")
+
         return data
+
 
 
 class PyNcatUDPEvader:
