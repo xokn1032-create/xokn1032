@@ -14,6 +14,9 @@ import base64
 import tqdm
 import redis
 import json
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization
 
 # Load structural AES-GCM engine components for UDP security profiles if available
 try:
@@ -27,6 +30,56 @@ logging.basicConfig(
     format='[%(asctime)s] [%(levelname)s] %(message)s',
     datefmt='%H:%M:%S'
 )
+
+class AsymmetricCryptoEngine:
+    """Handles asymmetric RSA signature signing and verification for command strings."""
+    def __init__(self, private_key_bytes: bytes = None, public_key_bytes: bytes = None):
+        self.private_key = None
+        self.public_key = None
+
+        if private_key_bytes:
+            self.private_key = serialization.load_pem_private_key(
+                private_key_bytes, password=None
+            )
+        if public_key_bytes:
+            self.public_key = serialization.load_pem_public_key(
+                public_key_bytes
+            )
+
+    def sign_command(self, command: str) -> str:
+        """Signs a cleartext command string and returns a base64-encoded signature string."""
+        if not self.private_key:
+            raise ValueError("Private key context missing. Cannot sign outbound directives.")
+        
+        signature = self.private_key.sign(
+            command.encode('utf-8'),
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        return base64.b64encode(signature).decode('utf-8')
+
+    def verify_command(self, command: str, b64_signature: str) -> bool:
+        """Verifies an incoming command payload against its associated base64 signature block."""
+        if not self.public_key:
+            raise ValueError("Public key context missing. Cannot verify inbound directives.")
+        
+        try:
+            signature_bytes = base64.b64decode(b64_signature.encode('utf-8'))
+            self.public_key.verify(
+                signature_bytes,
+                command.encode('utf-8'),
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
+            )
+            return True
+        except Exception:
+            return False
 
 class SecureUDPWrapper:
     """Handles AES-GCM authenticated symmetric encryption for raw UDP datagrams."""
