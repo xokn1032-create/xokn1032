@@ -17,6 +17,68 @@ import json
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
+import signal
+
+class EphemeralProcessSupervisor:
+    """Manages isolated, time-bounded subprocess lifetimes to prevent deadlocks and orphan leaks."""
+    def __init__(self, timeout_seconds: int = 15):
+        self.timeout = timeout_seconds
+        self._active_process = None
+        self._lock = threading.Lock()
+
+    def execute_safely(self, command_string: str) -> bytes:
+        """Executes a command block in an isolated process group with hard deadline enforcement."""
+        with self._lock:
+            try:
+                # preexec_fn=os.setsid creates an independent, isolated process group ID (PGID) on Linux
+                # For Windows testing nodes, creationflags=subprocess.CREATE_NEW_PROCESS_GROUP is used instead
+                kwargs = {}
+                if os.name != 'nt':
+                    kwargs['preexec_fn'] = os.setsid
+                else:
+                    kwargs['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP
+
+                self._active_process = subprocess.Popen(
+                    command_string,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    stdin=subprocess.PIPE,
+                    **kwargs
+                )
+
+                # Wait for execution response within the strict deadline window
+                stdout, stderr = self._active_process.communicate(timeout=self.timeout)
+                return stdout + stderr
+
+            except subprocess.TimeoutExpired:
+                logging.warning(f"[-] Execution Threshold Breached: Command timed out after {self.timeout}s. Forcing cleanup.")
+                self.terminate_active_group()
+                return b"[-] Operation execution timed out. Process context forcefully dismantled.\n"
+                
+            except Exception as e:
+                return f"[-] Runtime Supervision Error: {e}\n".encode('utf-8')
+                
+            finally:
+                self._active_process = None
+
+    def terminate_active_group(self):
+        """Surgically terminates the current process group to stop zombie resource leaks."""
+        if not self._active_process:
+            return
+
+        try:
+            if os.name != 'nt':
+                # Deliver a SIGKILL signal to the entire negative process group ID tree
+                os.killpg(os.getpgid(self._active_process.pid), signal.SIGKILL)
+            else:
+                # Deliver a native Windows taskkill kill command to eliminate the process tree
+                self._active_process.terminate()
+        except ProcessLookupError:
+            pass # Process already exited naturally
+        except Exception as e:
+            logging.error(f"[-] Critical group teardown exception: {e}")
+
 
 # Load structural AES-GCM engine components for UDP security profiles if available
 try:
