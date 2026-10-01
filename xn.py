@@ -271,13 +271,18 @@ class ProtocolCamouflage:
 
 class PyNcatUDPEvader:
     def __init__(self):
+        self.camofleur = ProtocolCamouflage(enabled=camo_active, mode=self.args.camo)
+
         self.args = self.parse_args()
         if self.args.verbose:
             logging.getLogger().setLevel(logging.DEBUG)
         
         self.udp_crypto = None
         self.xor_engine = XORObfuscator(self.args.xor) if self.args.xor else None
-        self.camofleur = ProtocolCamouflage(enabled=self.args.camo, mode="http")
+        # Inside __init__ method updates
+        camo_active = True if self.args.camo != 'none' else False
+        self.camofleur = ProtocolCamouflage(enabled=camo_active, mode=self.args.camo)
+
         
         # Enhanced Cross-Platform Analytical Tool Tracking Suite
         self.process_blacklist = [
