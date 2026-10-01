@@ -331,6 +331,10 @@ class PyNcatUDPEvader:
         parser.add_argument('--min-chunk', type=int, default=512, help='Minimum chunk size in bytes for dynamic file streaming limits')
         parser.add_argument('--max-chunk', type=int, default=1400, help='Maximum chunk size in bytes to prevent MTU fragmentation splits')
         parser.add_argument('--pad-target', type=int, default=0, help='Pad all transmitted packets to a fixed size structure (0 to disable)')
+        # Replace the old boolean --camo argument with this option string block
+        parser.add_argument('--camo', type=str, choices=['dns', 'ntp', 'none'], default='none', 
+                            help='Wrap payloads inside dummy application protocol templates')
+
         
         parser.add_argument('--retry', type=int, default=-1, help='Max network socket recreation retry attempts (-1 for infinite)')
         parser.add_argument('-v', '--verbose', action='store_true', help='Verbose debug logging output')
