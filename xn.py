@@ -209,7 +209,7 @@ class PyNcatUDPEvader:
         while not shutdown_event.is_set():
             try:
                 detected = []
-            if os_type == "windows":
+                if os_type == "windows":
                     cmd_output = subprocess.check_output("tasklist /NH /FO CSV", shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='replace').lower()
                 else:
                     cmd_output = subprocess.check_output("ps -A -o comm=", shell=True, stderr=subprocess.DEVNULL).decode('utf-8', errors='replace').lower()
