@@ -225,3 +225,5 @@ class PyNcatUDP:
 
 
 if __name__ == '__main__':
+    engine = PyNcatUDP()
+    engine.run()
