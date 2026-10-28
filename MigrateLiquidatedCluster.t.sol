@@ -14,7 +14,7 @@ contract MigrateLiquidatedClusterTest is Test {
 
     function test_MigrateLiquidatedClusterSSVWipe() public {
         // 1. Target a known legacy cluster address / owner that is liquidated (active = false, balance > 0)
-        address clusterOwner = address(0xafE830B6Ee262ba11cce5F32fDCd760FFE6a66e4); // fill from event logs / Dune query
+        address clusterOwner = address(0xe2758939507b35A22C30039A7da04B54cdc4c9A0); // fill from event logs / Dune query
         
         // 2. Impersonate the owner and check initial balance
         vm.startPrank(clusterOwner);
