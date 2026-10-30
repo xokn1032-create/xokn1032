@@ -26,6 +26,17 @@ contract MigrateLiquidatedClusterTest is Test {
         
         // 4. Assert whether the SSV balance was improperly wiped
         // assertEq(balanceAfter - balanceBefore, expectedRefund);
+
+        // Interfaces for SSVNetwork + SSVToken, pointed at:
+        // SSVNetwork proxy: 0xDD9BC35aE942eF0cFa76930954a156B3fF30a4E1  (check digit count against the Immunefi scope page)
+        // SSV token address
+
+        uint256 before = ssvToken.balanceOf(clusterOwner);
+        ssvNetwork.migrateClusterToETH(operatorIds, cluster); // cluster struct from your subgraph row
+        uint256 afterBal = ssvToken.balanceOf(clusterOwner);
+        console2.log("lost", before - afterBal);
+        assertGt(before, 0); // sanity: cluster actually had SSV before migrating
+
         
         vm.stopPrank();
     }
