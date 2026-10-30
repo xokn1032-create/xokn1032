@@ -9,7 +9,7 @@ contract MigrateLiquidatedClusterTest is Test {
 
     function setUp() public {
         // Fork mainnet at a recent block where legacy clusters existed
-        vm.createSelectFork("mainnet", 21_000_000); // adjust block number as needed
+        vm.createSelectFork("mainnet", 26_305_727); // adjust block number as needed
     }
 
     function test_MigrateLiquidatedClusterSSVWipe() public {
