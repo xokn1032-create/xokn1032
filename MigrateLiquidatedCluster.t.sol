@@ -32,7 +32,7 @@ contract MigrateLiquidatedClusterTest is Test {
     }
 
     function test_MigrateLiquidatedClusterSSVWipe() public {
-        address clusterOwner = 0xe2758939507b35A22C30039A7da04B54cdc4c9A0;
+        address clusterOwner = 0x861Da969253cAfBE1a5AeC8a1F85732C4cE5994a;
         
         uint64[] memory operatorIds = new uint64[](4);
         operatorIds[0] = 1647;
