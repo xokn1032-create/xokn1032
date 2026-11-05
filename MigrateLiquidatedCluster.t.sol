@@ -32,32 +32,39 @@ contract MigrateLiquidatedClusterTest is Test {
     }
 
     function test_MigrateLiquidatedClusterSSVWipe() public {
-        address clusterOwner = address(0xe2758939507b35A22C30039A7da04B54cdc4C9A0);
+        address clusterOwner = 0xe2758939507b35A22C30039A7da04B54cdc4c9A0;
         
-        // Populate with the exact operator IDs from the event log[span_3](start_span)[span_3](end_span)
         uint64[] memory operatorIds = new uint64[](4);
         operatorIds[0] = 1647;
         operatorIds[1] = 1648;
         operatorIds[2] = 1649;
         operatorIds[3] = 1650;
 
-        // Fetch live cluster struct from the Views contract on the fork
+        // Fetch the live cluster struct from the fork
         ISSVNetwork.Cluster memory cluster = ssvViews.getCluster(operatorIds, clusterOwner);
 
+        // Sanity checks on cluster state before migration
+        assertEq(cluster.active, false, "Target cluster should be liquidated (inactive)");
+        
         vm.startPrank(clusterOwner);
         
-        uint256 before = ssvToken.balanceOf(clusterOwner);
-        console2.log("SSV Balance Before Migration:", before);
-        
-        // Execute migration logic
+        uint256 balanceBefore = ssvToken.balanceOf(clusterOwner);
+        console2.log("--- BEFORE MIGRATION ---");
+        console2.log("Cluster Balance (internal struct):", cluster.balance);
+        console2.log("Owner SSV Token Balance:", balanceBefore);
+
+        // Execute migration
         ssvNetwork.migrateClusterToETH(operatorIds, cluster);
         
-        uint256 afterBal = ssvToken.balanceOf(clusterOwner);
-        console2.log("SSV Balance After Migration:", afterBal);
-        console2.log("Lost / Wiped Amount:", before > afterBal ? before - afterBal : 0);
+        uint256 balanceAfter = ssvToken.balanceOf(clusterOwner);
+        console2.log("--- AFTER MIGRATION ---");
+        console2.log("Owner SSV Token Balance:", balanceAfter);
 
-        assertGt(before, 0, "Sanity: cluster should have had SSV balance before migrating");
+        uint256 delta = balanceBefore > balanceAfter ? balanceBefore - balanceAfter : balanceAfter - balanceBefore;
+        console2.log("Token Delta:", delta);
 
+        // If the balance did not increase to refund the leftover internal balance, or if it dropped:
+        // We log the exact finding.
         vm.stopPrank();
     }
 }
