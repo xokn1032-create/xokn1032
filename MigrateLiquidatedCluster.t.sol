@@ -35,10 +35,10 @@ contract MigrateLiquidatedClusterTest is Test {
         address clusterOwner = 0x861Da969253cAfBE1a5AeC8a1F85732C4cE5994a;
         
         uint64[] memory operatorIds = new uint64[](4);
-        operatorIds[0] = 1647;
-        operatorIds[1] = 1648;
-        operatorIds[2] = 1649;
-        operatorIds[3] = 1650;
+        operatorIds[0] = 2357;
+        operatorIds[1] = 2358;
+        operatorIds[2] = 2359;
+        operatorIds[3] = 2360;
 
         // Fetch the live cluster struct from the fork
         ISSVNetwork.Cluster memory cluster = ssvViews.getCluster(operatorIds, clusterOwner);
