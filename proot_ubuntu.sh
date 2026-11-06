@@ -16,3 +16,17 @@ foundryup
 
 cd /tmp
 gh repo clone ssvlabs/ssv-network
+
+cd ssv-network
+
+# Install both libraries
+forge install OpenZeppelin/openzeppelin-contracts@v4.9.3 --no-commit
+forge install OpenZeppelin/openzeppelin-contracts-upgradeable@v4.9.3 --no-commit
+
+# Set up comprehensive remappings for both absolute and node_modules paths
+cat << 'EOF' > remappings.txt
+@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
+node_modules/@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+node_modules/@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
+EOF
