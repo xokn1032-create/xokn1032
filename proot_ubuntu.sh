@@ -13,3 +13,6 @@ curl -L https://foundry.paradigm.xyz | bash
 
 export PATH="$PATH:/home/cosmicbowl4/.foundry/bin"
 foundryup
+
+cd /tmp
+gh repo clone ssvlabs/ssv-network
