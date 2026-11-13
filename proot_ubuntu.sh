@@ -7,6 +7,7 @@ wget https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-2
 mkdir ubuntu-rootfs
 tar -xzf ubuntu-base-24.04.4-base-amd64.tar.gz -C ubuntu-rootfs
 cp /etc/resolv.conf ./ubuntu-rootfs/etc/resolv.conf
+./proot -b /dev -0 -r ./ubuntu-rootfs -w /root /bin/bash
 
 apt update && apt install -y curl wget build-essential bash npm gh 
 curl -L https://foundry.paradigm.xyz | bash
