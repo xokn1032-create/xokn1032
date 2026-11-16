@@ -31,3 +31,8 @@ cat << 'EOF' > remappings.txt
 node_modules/@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
 node_modules/@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
 EOF
+
+chmod u+rwx ubuntu-rootfs
+chmod -R u+rwx ubuntu-rootfs
+rm -rf ubuntu-rootfs
+
